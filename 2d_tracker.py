@@ -3,6 +3,8 @@
 # the usual suspects
 import numpy as np
 import numpy.random as rnd
+import matplotlib
+matplotlib.use('GTK')
 import matplotlib.pyplot as plt
 import matplotlib.cbook as cbook
 import matplotlib.patches as patches
@@ -17,7 +19,7 @@ from filterpy.stats import plot_covariance_ellipse
 #other stuff
 from scipy.spatial.distance import euclidean,mahalanobis
 from munkres import Munkres, print_matrix
-
+import time
 
 # ===init sequence===
 work_dir = '/home/stefan/projects/MOTChallenge/2DMOT2015/train/'
@@ -67,6 +69,7 @@ first_dets = [x for x in det_list if x[0]==1]
 
 
 # ===init tracks and other stuff==
+do_vis = True
 track_id = 1
 dt = 1./seq_fps
 track_list = []
@@ -80,8 +83,9 @@ for first_det_idx in xrange(len(first_dets)):
     track_list.append(new_track)
 # init munkres (=Hungarian Algorithm) to find NN in DA step #TODO: IoU (outsource distance measure)
 m = Munkres()
-dist_thresh = 100 #pixel #TODO: dependent on resolution
+dist_thresh = 20 #pixel #TODO: dependent on resolution
 
+tstart = time.time()
 # ===Tracking fun begins: iterate over frames===
 for curr_frame in xrange(1,seq_frames+1):
     # get detections in current frame
@@ -146,20 +150,26 @@ for curr_frame in xrange(1,seq_frames+1):
     # ... sth. else?
 
     # ===visualization===
-    # open image file
-    image_string = seq_dir+'/img1/{:06d}.jpg'.format(curr_frame) #TODO: are all images .jpgs? ifn put as seq_attr
-    image_file = cbook.get_sample_data(image_string)
-    curr_image = plt.imread(image_file)
-    # > 'image[50:250,50:250] = 255' #simple image manipulations
-    # plot detections
-    for det in curr_dets:
-        plt.gca().add_patch(patches.Rectangle((det[2],det[3]),det[4],det[5],fill=False,linewidth=det[6]/10.0,edgecolor="red"))
-        #plot_covariance_ellipse((det[2]+det[4]/2.,det[3]+det[5]/2.),[[200,0],[0,200]],fc='r',alpha=0.4,std=[1,2,3])
-    # plot (active) tracks
-    for each_tracker in track_list:
-        plot_covariance_ellipse((each_tracker.KF.x[0],each_tracker.KF.x[2]), each_tracker.KF.P,
-                                fc=each_tracker.color, alpha=0.4, std=[1,2,3])
-        #plt.gca().add_patch(patches.Rectangle((each_tracker.KF.x[0]-50, each_tracker.KF.x[2]-200),
-        #                                        100, 200, fill=False, linewidth=5, edgecolor=each_tracker.color))
-    plt.imshow(curr_image)
-    plt.show()
+    if do_vis:
+        # open image file
+        image_string = seq_dir+'/img1/{:06d}.jpg'.format(curr_frame) #TODO: are all images .jpgs? ifn put as seq_attr
+        image_file = cbook.get_sample_data(image_string)
+        image_save_path = '/home/stefan/results/2d_tracker/res_img_{:06d}'.format(curr_frame)
+        curr_image = plt.imread(image_file)
+        # > 'image[50:250,50:250] = 255' #simple image manipulations
+        # plot detections
+        for det in curr_dets:
+            plt.gca().add_patch(patches.Rectangle((det[2],det[3]),det[4],det[5],fill=False,linewidth=det[6]/10.0,edgecolor="red"))
+            #plot_covariance_ellipse((det[2]+det[4]/2.,det[3]+det[5]/2.),[[200,0],[0,200]],fc='r',alpha=0.4,std=[1,2,3])
+        # plot (active) tracks
+        for each_tracker in track_list:
+            each_tracker.plot_track(plot_past_trajectory=True)
+            #plt.gca().add_patch(patches.Rectangle((each_tracker.KF.x[0]-50, each_tracker.KF.x[2]-200),
+            #                                        100, 200, fill=False, linewidth=5, edgecolor=each_tracker.color))
+        plt.imshow(curr_image)
+        plt.savefig(image_save_path)
+        #plt.show()
+        plt.close()
+
+print 'FPS:', seq_frames / (time.time() - tstart)
+
