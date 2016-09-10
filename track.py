@@ -29,13 +29,13 @@ class Track(object):
         self.KF.F = np.array([[1, dt, 0, 0],
                               [0, 1, 0, 0],
                               [0, 0, 1, dt],
-                              [0, 0, 0, 1]])
+                              [0, 0, 0, 1]], dtype=np.float64)
         q = Q_discrete_white_noise(dim=2, dt=dt, var=5000.)
         self.KF.Q = block_diag(q, q)  # TODO: matrix design for all the filters
         self.KF.H = np.array([[1, 0, 0, 0],
-                              [0, 0, 1, 0]])
-        self.KF.R = np.array([[10., 0],
-                              [0, 10.]])
+                              [0, 0, 1, 0]], dtype=np.float64)
+        self.KF.R = np.array([[10, 0],
+                              [0, 10]], dtype=np.float64)
         self.KF.x = init_x
         self.KF.P = init_P
 
