@@ -5,14 +5,14 @@ from __future__ import division
 
 import argparse
 from os.path import join as pjoin
+import time
 
 # the usual suspects
 import numpy as np
 import numpy.random as rnd
 import matplotlib
-matplotlib.use('GTK')
+# matplotlib.use('GTK')
 import matplotlib.pyplot as plt
-import matplotlib.cbook as cbook
 import matplotlib.patches as patches
 
 #tracker stuff
@@ -25,7 +25,6 @@ from filterpy.stats import plot_covariance_ellipse
 #other stuff
 from scipy.spatial.distance import euclidean,mahalanobis
 from munkres import Munkres, print_matrix
-import time
 
 # ===init sequence===
 class Sequence(object):
@@ -175,10 +174,7 @@ for curr_frame in range(1,seq.nframes+1):
     # ===visualization===
     if args.vis:
         # open image file
-        image_string = pjoin(seq_dir, 'img1/{:06d}.jpg'.format(curr_frame)) #TODO: are all images .jpgs? ifn put as seq_attr
-        image_file = cbook.get_sample_data(image_string)
-        image_save_path = pjoin(args.outdir, 'res_img_{:06d}'.format(curr_frame))
-        curr_image = plt.imread(image_file)
+        curr_image = plt.imread(pjoin(seq_dir, 'img1/{:06d}.jpg'.format(curr_frame)))
         # > 'image[50:250,50:250] = 255' #simple image manipulations
         # plot detections
         for det in curr_dets:
@@ -190,7 +186,7 @@ for curr_frame in range(1,seq.nframes+1):
             #plt.gca().add_patch(patches.Rectangle((each_tracker.KF.x[0]-50, each_tracker.KF.x[2]-200),
             #                                        100, 200, fill=False, linewidth=5, edgecolor=each_tracker.color))
         plt.imshow(curr_image)
-        plt.savefig(image_save_path)
+        plt.savefig(pjoin(args.outdir, 'res_img_{:06d}'.format(curr_frame)))
         #plt.show()
         plt.close()
 
