@@ -1,5 +1,8 @@
 #!/usr/bin/env python
 
+from __future__ import print_function
+from __future__ import division
+
 import argparse
 from os.path import join as pjoin
 
@@ -81,7 +84,7 @@ with open(pjoin(seq_dir, 'det/det.txt'), 'r') as det_file:
             one_det[9] = float(one_det[9])
             det_list.append(one_det)
         else:
-            print 'Warning: misformed detection line according to MOT format (10 entries needed)'
+            print('Warning: misformed detection line according to MOT format (10 entries needed)')
     # > 'det_list[x][y]',  to access detection x, data y
     # one detection line in 2D-MOTChallenge format:
     # field     0        1     2          3         4           5            6       7    8    9
@@ -94,7 +97,7 @@ track_id = 1
 dt = 1./seq.fps
 track_list = []
 # debug: init one tracker for each first detection #TODO: only start tracks, when min_num_dets (also down below)
-for first_det_idx in xrange(len(first_dets)):
+for first_det_idx in range(len(first_dets)):
     init_x = [first_dets[first_det_idx][2]+first_dets[first_det_idx][4]/2., 0,
                  first_dets[first_det_idx][3]+first_dets[first_det_idx][5]/2., 0]
     init_P = np.eye(4)*1000
@@ -107,7 +110,7 @@ dist_thresh = 20 #pixel #TODO: dependent on resolution
 
 tstart = time.time()
 # ===Tracking fun begins: iterate over frames===
-for curr_frame in xrange(1,seq.nframes+1):
+for curr_frame in range(1,seq.nframes+1):
     # get detections in current frame
     curr_dets = [x for x in det_list if x[0]==curr_frame]
     num_curr_dets = len(curr_dets)
@@ -123,7 +126,7 @@ for curr_frame in xrange(1,seq.nframes+1):
 
         # no detections? no distance matrix
         if not num_curr_dets:
-            print 'No detections in this frame.'
+            print('No detections in this frame.')
             break
         # ---BUILD DISTANCE MATRIX---
         #dist_matrix = [euclidean(tracker.x[0::2],curr_dets[i][2:4]) for i in range(len(curr_dets))]
@@ -141,7 +144,7 @@ for curr_frame in xrange(1,seq.nframes+1):
     if len(dist_matrix) != 0:
         nn_indexes = m.compute(dist_matrix)
         # perform update step for each match (check for threshold, to see, if it's actually a miss)
-        for nn_match_idx in xrange(len(nn_indexes)):
+        for nn_match_idx in range(len(nn_indexes)):
             # ---UPDATE---
             if (dist_matrix[nn_indexes[nn_match_idx][0]][nn_indexes[nn_match_idx][1]]<=dist_thresh):
                 nn_det = curr_dets[nn_indexes[nn_match_idx][1]] #1st: track_idx, 2nd: 0=track_idx, 1 det_idx
@@ -191,5 +194,5 @@ for curr_frame in xrange(1,seq.nframes+1):
         #plt.show()
         plt.close()
 
-print 'FPS:', seq.nframes / (time.time() - tstart)
+print('FPS: {:.3f}'.format(seq.nframes / (time.time() - tstart)))
 
