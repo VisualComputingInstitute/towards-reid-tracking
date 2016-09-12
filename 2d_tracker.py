@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-.
 
 from __future__ import print_function
 from __future__ import division
@@ -129,10 +130,11 @@ for curr_frame in range(1,seq.nframes+1):
             break
         # ---BUILD DISTANCE MATRIX---
         #dist_matrix = [euclidean(tracker.x[0::2],curr_dets[i][2:4]) for i in range(len(curr_dets))]
+        inv_P = inv(each_tracker.KF.P[::2,::2])
         dist_matrix_line = np.array([mahalanobis(each_tracker.KF.x[::2],
                                         (curr_dets[i][2]+curr_dets[i][4]/2.,
                                          curr_dets[i][3]+curr_dets[i][5]/2.),
-                                        inv(each_tracker.KF.P[::2,::2])) for i in range(len(curr_dets))])
+                                        inv_P) for i in range(len(curr_dets))])
         # apply the threshold here (munkres apparently can't deal 100% with inf, so use 999999)
         dist_matrix_line[np.where(dist_matrix_line>dist_thresh)] = 999999
         dist_matrix.append(dist_matrix_line.tolist())
