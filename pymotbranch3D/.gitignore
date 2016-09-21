@@ -1,0 +1,8 @@
+*.pyc
+*.json
+*.json~
+.gitignore~
+.idea/
+3d/Hypos_A.txt~
+trackingResultsAPIDIS.xml
+

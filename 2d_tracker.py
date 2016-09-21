@@ -26,6 +26,9 @@ from filterpy.stats import plot_covariance_ellipse
 #other stuff
 from scipy.spatial.distance import euclidean,mahalanobis
 from munkres import Munkres, print_matrix
+from pymotbranch3D.pymot import MOTEvaluation
+import json
+from pprint import pprint
 
 # ===init sequence===
 class Sequence(object):
@@ -54,9 +57,11 @@ parser.add_argument('--traindir', nargs='?', default='/home/stefan/projects/MOTC
                     help='Path to `train` folder of 2DMOT2015.')
 parser.add_argument('--outdir', nargs='?', default='/home/stefan/results/2d_tracker/',
                     help='Where to store generated output. Only needed if `--vis` is also passed.')
-parser.add_argument('--sequence', nargs='?', choices=all_sequences.keys(), default='ADL-Rundle-6')
-parser.add_argument('--vis', action='store_true',
+parser.add_argument('--sequence', nargs='?', choices=all_sequences.keys(), default='TUD-Campus')
+parser.add_argument('--vis', action='store_true', default=False,
                     help='Generate and save visualization of the results.')
+parser.add_argument('--eval', action='store_true', default=True,
+                    help='Evaluate result on given groundtruth file.')
 args = parser.parse_args()
 print(args)
 
@@ -89,22 +94,15 @@ with open(pjoin(seq_dir, 'det/det.txt'), 'r') as det_file:
     # one detection line in 2D-MOTChallenge format:
     # field     0        1     2          3         4           5            6       7    8    9
     # data      <frame>  <id>  <bb_left>  <bb_top>  <bb_width>  <bb_height>  <conf>  <x>  <y>  <z>
-first_dets = [x for x in det_list if x[0]==1]
-
+#first_dets = [x for x in det_list if x[0]==1]
 
 # ===init tracks and other stuff==
 track_id = 1
 dt = 1./seq.fps
 track_list = []
-# debug: init one tracker for each first detection #TODO: only start tracks, when min_num_dets (also down below)
-for first_det_idx in range(len(first_dets)):
-    init_x = [first_dets[first_det_idx][2]+first_dets[first_det_idx][4]/2., 0,
-                 first_dets[first_det_idx][3]+first_dets[first_det_idx][5]/2., 0]
-    init_P = np.eye(4)*1000
-    new_track = Track(init_x,init_P,dt,1,track_id=track_id)
-    track_id = track_id + 1
-    track_list.append(new_track)
-# init munkres (=Hungarian Algorithm) to find NN in DA step #TODO: IoU (outsource distance measure)
+if args.eval:
+    eval_frames = []
+    eval_hypos = []
 m = Munkres()
 dist_thresh = 20 #pixel #TODO: dependent on resolution
 
@@ -126,9 +124,9 @@ for curr_frame in range(1,seq.nframes+1):
 
         # no detections? no distance matrix
         if not num_curr_dets:
-            print('No detections in this frame.')
             break
         # ---BUILD DISTANCE MATRIX---
+        # TODO: IoU (outsource distance measure)
         #dist_matrix = [euclidean(tracker.x[0::2],curr_dets[i][2:4]) for i in range(len(curr_dets))]
         inv_P = inv(each_tracker.KF.P[::2,::2])
         dist_matrix_line = np.array([mahalanobis(each_tracker.KF.x[::2],
@@ -161,16 +159,23 @@ for curr_frame in range(1,seq.nframes+1):
 
     # ===track management===
     # start new tracks for unassigend dets (really unassigend + not assigend due to thresh, set above)
-    # TODO: min_det_num dets needed to really 'start' new tracks (see above) status 'active/inactive'
+    # TODO: min_det_num dets needed to really 'start' new tracks, status 'active/inactive'
     for unassigend_det_idx in unassigned_dets:
         init_x = [curr_dets[unassigend_det_idx][2] + curr_dets[unassigend_det_idx][4]/2., 0,
                   curr_dets[unassigend_det_idx][3] + curr_dets[unassigend_det_idx][5]/2., 0]
-        init_P = np.eye(4) * 1000
+        init_P = np.eye(4) * 100
         new_track = Track(init_x, init_P, dt, curr_frame, track_id=track_id)
         track_id = track_id + 1
         track_list.append(new_track)
     # delete tracks marked as 'deleted' in this tracking cycle #TODO: manage in other list for re-id
     track_list = [i for i in track_list if i.status != 'deleted']
+    # safe all tracks for evaluation in frame
+    if args.eval:
+        for each_track in track_list:
+            eval_hypos.append(each_track.get_track_state_dict())
+        this_frame_info = {"timestamp": curr_frame, "num": curr_frame, "class": "frame", "hypotheses": eval_hypos}
+        eval_frames.append(this_frame_info)
+        eval_hypos = []
     # ... sth. else?
 
     # ===visualization===
@@ -194,3 +199,52 @@ for curr_frame in range(1,seq.nframes+1):
 
 print('FPS: {:.3f}'.format(seq.nframes / (time.time() - tstart)))
 
+# ===evaluation===
+if args.eval:
+    # get groundtruth
+    with open(pjoin(seq_dir, 'gt/gt.txt'), 'r') as gt_file:
+        # create and fill list of all detections #TODO: special det object, to handle status, modality,...
+        gt_list = []
+        for gt_line in gt_file:
+            gt_line = gt_line.rstrip('\n')
+            one_gt = gt_line.split(',')
+            # check valid line
+            if (len(one_gt) == 10):
+                one_gt[0] = int(one_gt[0])  # TODO: nicer way to format this?
+                one_gt[1] = int(one_gt[1])
+                one_gt[2] = int(one_gt[2])
+                one_gt[3] = int(one_gt[3])
+                one_gt[4] = float(one_gt[4])
+                one_gt[5] = float(one_gt[5])
+                one_gt[6] = float(one_gt[6])
+                one_gt[7] = float(one_gt[7])
+                one_gt[8] = float(one_gt[8])
+                one_gt[9] = float(one_gt[9])
+                gt_list.append(one_gt)
+            else:
+                print('Warning: misformed groundtruth line according to MOT format (10 entries needed)')
+    eval_frames_gt = []
+    eval_gts = []
+    for curr_frame in range(1,seq.nframes+1):
+        # get groundtruth in current frame
+        curr_gts = [x for x in gt_list if x[0] == curr_frame]
+        # field     0        1     2          3         4           5            6       7    8    9
+        # data      <frame>  <id>  <bb_left>  <bb_top>  <bb_width>  <bb_height>  <conf>  <x>  <y>  <z>
+        for each_gt in curr_gts:
+            eval_gts.append({"dco":False, "height": each_gt[5], "width": each_gt[4], "id": each_gt[1],
+                             "y": each_gt[3]+each_gt[5]/2., "x": each_gt[2]+each_gt[4]/2., "z": 0})
+        this_frame_info_gt = {"timestamp": curr_frame, "num": curr_frame, "class": "frame", "annotations": eval_gts}
+        eval_frames_gt.append(this_frame_info_gt)
+        eval_gts = []
+    eval_groundtruth = {"frames":eval_frames_gt, "class": "video", "filename": "/whatever"}
+
+    # prepare hypos
+    eval_hypotheses = {"frames":eval_frames, "class": "video", "filename": "/whatever"}
+
+    evaluator = MOTEvaluation(eval_groundtruth, eval_hypotheses, use3Dinput=True)
+    evaluator.evaluate()
+    print('===Evaluation results===\n')
+    print('MOTA:', evaluator.getMOTA())
+    print('MOTP:', evaluator.getMOTP())
+    pprint(evaluator.getRelativeStatistics())
+    pprint(evaluator.getAbsoluteStatistics())

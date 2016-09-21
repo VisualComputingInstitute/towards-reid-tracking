@@ -28,7 +28,7 @@ class Track(object):
                               [0, 1, 0, 0],
                               [0, 0, 1, dt],
                               [0, 0, 0, 1]], dtype=np.float64)
-        q = Q_discrete_white_noise(dim=2, dt=dt, var=5000.)
+        q = Q_discrete_white_noise(dim=2, dt=dt, var=10.)
         self.KF.Q = block_diag(q, q)  # TODO: matrix design for all the filters
         self.KF.H = np.array([[1, 0, 0, 0],
                               [0, 0, 1, 0]], dtype=np.float64)
@@ -77,3 +77,6 @@ class Track(object):
     def track_is_deleted(self,curr_frame):
         self.deleted_at = curr_frame
         self.status = 'deleted'
+
+    def get_track_state_dict(self):
+        return {"height": 0, "width": 0, "id": self.track_id, "y": self.KF.x[2], "x": self.KF.x[0], "z": 0}
