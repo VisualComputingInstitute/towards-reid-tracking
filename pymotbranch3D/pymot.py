@@ -17,13 +17,13 @@ LOG = logging.getLogger(__name__)
 
 class MOTEvaluation:
 
-    def __init__(self, groundtruth, hypotheses, use3Dinput=True):
+    def __init__(self, groundtruth, hypotheses, use3Dinput=True, distance_threshold = 50):
         """Constructor """
 
         # is the input we use is 3D
         self.use3D = use3Dinput
 
-        self.distance_threshold = 50 # when using 3D input, the minimum distance between players should be 50 cm
+        self.distance_threshold = distance_threshold # when using 3D input, the minimum distance between players should be 50 cm
 
         self.overlap_threshold_ = 0.2
         """Bounding box overlap threshold"""
@@ -93,7 +93,7 @@ class MOTEvaluation:
         
         frames = self.groundtruth_["frames"]
         for frame in frames:
-            print "frame: ", frame["num"]
+            #print "frame: ", frame["num"]
             self.evaluateFrame(frame)
 
 
@@ -157,7 +157,7 @@ class MOTEvaluation:
                 LOG.warning("found %d > 1 ground truth tracks for id %s", len(groundtruth), gt_id)
             elif len(groundtruth) < 1:
                 continue
-            print(hypotheses)
+
             hypothesis = filter(lambda h: h["id"] == self.mappings_[gt_id], hypotheses) # Get hypothesis with hypothesis id according to mapping
             assert len(hypothesis) <= 1
             if len(hypothesis) != 1:
