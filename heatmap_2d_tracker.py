@@ -29,20 +29,6 @@ STATE_SHAPE = (270, 480)
 HEATMAP_SHAPE = (36, 64)
 
 
-# ===functions===
-def heatmap_sampling_for_dets(heatmap, dets_boxes):
-    H, W = heatmap.shape
-    for l, t, w, h in dets_boxes:
-        # score is how many times more samples than pixels in the detection box.
-        score = np.random.randint(1,5)
-        add_idx = np.random.multivariate_normal([l+w/2, t+h/2], [[(w/6)**2, 0], [0, (h/6)**2]], int(np.prod(heatmap.shape)*h*w*score))
-        np.add.at(heatmap, [[int(np.clip(y, 0, 0.999)*H) for x,y in add_idx],
-                            [int(np.clip(x, 0, 0.999)*W) for x,y in add_idx]], 1)
-    return heatmap
-
-# ===init tracks and other stuff==
-
-
 class FakeNews:
     def __init__(self, dets):
         self.already_tracked_ids = [[], [], [], [], [], [], [], []]
@@ -68,7 +54,7 @@ class FakeNews:
     def search_person(self, image_embedding, person_embedding, fake_track_id):
         id_heatmap = np.random.rand(*HEATMAP_SHAPE)
         id_det_boxes = self.curr_cam_dets['boxes'][self.curr_cam_dets['TIDs'] == fake_track_id]
-        return heatmap_sampling_for_dets(id_heatmap, id_det_boxes)
+        return self._heatmap_sampling_for_dets(id_heatmap, id_det_boxes)
 
 
     def personness(self, image, known_embeddings):
@@ -76,13 +62,24 @@ class FakeNews:
         new_heatmaps_and_ids = []
         for each_det_idx in new_det_indices:
             new_heatmap = np.random.rand(*HEATMAP_SHAPE)
-            new_heatmap = heatmap_sampling_for_dets(new_heatmap, [self.curr_cam_dets['boxes'][each_det_idx]])
+            new_heatmap = self._heatmap_sampling_for_dets(new_heatmap, [self.curr_cam_dets['boxes'][each_det_idx]])
             new_id = self.curr_cam_dets['TIDs'][each_det_idx]
             # TODO: get correct track_id (loop heatmap, instead of function call?# )
             # TODO: get id_heatmap of that guy for init_heatmap
             self.already_tracked_ids[icam - 1].append(new_id)
             new_heatmaps_and_ids.append((new_heatmap, new_id))
         return new_heatmaps_and_ids
+
+
+    def _heatmap_sampling_for_dets(self, heatmap, dets_boxes):
+        H, W = heatmap.shape
+        for l, t, w, h in dets_boxes:
+            # score is how many times more samples than pixels in the detection box.
+            score = np.random.randint(1,5)
+            add_idx = np.random.multivariate_normal([l+w/2, t+h/2], [[(w/6)**2, 0], [0, (h/6)**2]], int(np.prod(heatmap.shape)*h*w*score))
+            np.add.at(heatmap, [[int(np.clip(y, 0, 0.999)*H) for x,y in add_idx],
+                                [int(np.clip(x, 0, 0.999)*W) for x,y in add_idx]], 1)
+        return heatmap
 
 
 #@profile
