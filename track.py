@@ -42,7 +42,7 @@ def box_centered(cx, cy, h, w, bounds=(0, 0, 1, 1)):
 
 def cutout(img, box):
     # box is l, t, w, h
-    l, t, w, h = box
+    l, t, w, h = map(int, box)
     return img[t:t+h,l:l+w]
 
 

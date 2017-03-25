@@ -125,7 +125,6 @@ dist_thresh = 100 #pixel #TODO: dependent on resolution
 for icam in range(1, 8+1):
     makedirs(pjoin(args.outdir, 'camera{}'.format(icam)), exist_ok=True)
 
-
 class FakeNews:
     def __init__(self):
         self.already_tracked_ids = [[], [], [], [], [], [], [], []]
