@@ -57,6 +57,10 @@ class FakeNews:
         self.curr_cam_dets = lib.slice_all(self.curr_dets, self.curr_dets['Cams'] == icam)
 
 
+    def embed_crop(self, crop, fake_id):
+        return fake_id
+
+
     def embed_image(self, image):
         return None  # z.B. (30,60,128)
 
@@ -118,7 +122,8 @@ def main(fake_neural_news_network):
             for new_heatmap, new_id in fake_neural_news_network.personness(images[icam-1], known_embeddings=None):
                 # TODO: get correct track_id (loop heatmap, instead of function call?# )
                 # TODO: get id_heatmap of that guy for init_heatmap
-                new_track = Track(SEQ_DT, curr_frame, new_heatmap, images[icam-1], track_id=new_id,
+                new_track = Track(net.embed_crop, SEQ_DT,
+                                  curr_frame, new_heatmap, images[icam-1], track_id=new_id,
                                   state_shape=STATE_SHAPE, output_shape=SEQ_SHAPE)
                 track_lists[icam-1].append(new_track)
 

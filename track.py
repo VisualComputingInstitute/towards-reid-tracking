@@ -23,10 +23,6 @@ all_bs = np.array([[255.9004, -0.0205, 138.4768, 0.1939],
                    [175.5730, 0.0077, 76.2798, 0.1737]])
 
 
-def embed_crop(crop, fake_id):
-    return fake_id
-
-
 class Track(object):
 
     """ Implements a track (not a tracker, a track).
@@ -38,8 +34,10 @@ class Track(object):
 
     """
 
-    def __init__(self, dt, curr_frame, init_heatmap, image,
+    def __init__(self, embed_crop_fn, dt, curr_frame, init_heatmap, image,
                  state_shape, output_shape, track_dim=2, det_dim=2, track_id=-1):
+        self.embed_crop_fn = embed_crop_fn
+
         init_x = [0.0, 0.0]
         init_P = [[10.0, 0], [0, 10.0]]
 
@@ -82,7 +80,7 @@ class Track(object):
 
         self.embedding = None
         crop = self.get_crop_at_pos(self.poses[0],image)
-        self.update_embedding(embed_crop(crop, fake_id=track_id))  # TODO: Make real
+        self.update_embedding(self.embed_crop_fn(crop, fake_id=track_id))  # TODO: Make real
 
     # ==Heatmap stuff==
     def resize_to_state(self, heatmap):
@@ -149,7 +147,7 @@ class Track(object):
             self.track_is_matched(curr_frame)
             # update embedding
             crop = self.get_crop_at_pos(self.poses[0], image)
-            self.update_embedding(embed_crop(crop, fake_id=self.track_id))  # TODO: Make real
+            self.update_embedding(self.embed_crop_fn(crop, fake_id=self.track_id))  # TODO: Make real
         else:
             self.track_is_missed(curr_frame)
 
