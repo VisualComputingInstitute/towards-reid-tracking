@@ -36,6 +36,12 @@ def sane_listdir(where, ext='', sortkey=None):
     return sorted((i for i in os.listdir(where) if not i.startswith('.') and i.endswith(ext)), key=sortkey)
 
 
+def img2df(img):
+    img = np.rollaxis(img, 2, 0)  # HWC to CHW
+    img = img.astype(np.float32) / 255.0
+    return img
+
+
 ###############################################################################
 # Video handling, only with OpenCV
 
@@ -50,9 +56,7 @@ try:
         """
         img = cv2.resize(img, shape, interpolation=cv2.INTER_AREA)
         img = img[:,:,::-1]  # BGR to RGB
-        img = np.rollaxis(img, 2, 0)  # HWC to CHW
-        img = img.astype(np.float32) / 255.0
-        return img
+        return img2df(img)
 
 
     def video_or_open(video):
