@@ -138,12 +138,12 @@ def main(net):
                 # open image file
                 #curr_image = plt.imread(pjoin(args.basedir, 'frames/camera{}/{}.jpg'.format(icam, lib.glob2loc(curr_frame, icam))))  # TODO
                 curr_image = images[icam-1]
-                plt.imshow(curr_image)
+                plt.imshow(curr_image, extent=[0, 1920//2, 1080//2, 0])
 
                 # plot (active) tracks
                 for each_tracker in track_list:
                     #if(each_tracker.track_id==3):
-                    each_tracker.plot_track(plot_past_trajectory=True, plot_heatmap=True)
+                    each_tracker.plot_track(plot_past_trajectory=True, plot_heatmap=True, output_shape=(1080//2, 1920//2))
                     #break
                     #plt.gca().add_patch(patches.Rectangle((each_tracker.KF.x[0]-50, each_tracker.KF.x[2]-200),
                     #                                        100, 200, fill=False, linewidth=3, edgecolor=each_tracker.color))

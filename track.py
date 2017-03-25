@@ -110,14 +110,20 @@ class Track(object):
             self.embedding /= self.n_embs_seen
 
     # ==Track state==
-    def state_to_output(self, x, y):
-        return [x/self.state_shape[1]*self.output_shape[1],
-                y/self.state_shape[0]*self.output_shape[0]]
+    def state_to_output(self, x, y, output_shape=None):
+        if output_shape is None:
+            output_shape = self.output_shape
 
-    def states_to_outputs(self, xy):
+        return [x/self.state_shape[1]*output_shape[1],
+                y/self.state_shape[0]*output_shape[0]]
+
+    def states_to_outputs(self, xy, output_shape):
         # xy is of shape (N,2)
-        factors = [self.output_shape[1]/self.state_shape[1],
-                   self.output_shape[0]/self.state_shape[0]]
+        if output_shape is None:
+            output_shape = self.output_shape
+
+        factors = [output_shape[1]/self.state_shape[1],
+                   output_shape[0]/self.state_shape[0]]
         return xy*factors
 
     def get_velocity_estimate(self,old_heatmap, pos_heatmap):
@@ -188,14 +194,17 @@ class Track(object):
         #TODO
 
     # ==Visualization==
-    def plot_track(self, plot_past_trajectory=False, plot_heatmap=False):
+    def plot_track(self, plot_past_trajectory=False, plot_heatmap=False, output_shape=None):
+        if output_shape is None:
+            output_shape = self.output_shape
+
         #plot_covariance_ellipse((self.KF.x[0], self.KF.x[2]), self.KF.P, fc=self.color, alpha=0.4, std=[1,2,3])
         #print(self.poses)
-        plt.plot(*self.state_to_output(*self.poses[-1]), color=self.color, marker='o')
-        plt.text(*self.state_to_output(*self.poses[-1]),s='{}'.format(self.embedding))
+        plt.plot(*self.state_to_output(*self.poses[-1], output_shape=output_shape), color=self.color, marker='o')
+        plt.text(*self.state_to_output(*self.poses[-1], output_shape=output_shape), s='{}'.format(self.embedding))
         if plot_past_trajectory and len(self.poses)>1:
-            outputs_xy = self.states_to_outputs(np.array(self.poses))
+            outputs_xy = self.states_to_outputs(np.array(self.poses), output_shape)
             plt.plot(*outputs_xy.T, linewidth=2.0, color=self.color)
         if plot_heatmap:
             plt.imshow(self.pos_heatmap, alpha=0.5, interpolation='none', cmap='hot',
-                       extent=[0, self.output_shape[1], self.output_shape[0], 0], clim=(0, 10))
+                       extent=[0, output_shape[1], output_shape[0], 0], clim=(0, 10))
