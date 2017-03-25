@@ -20,13 +20,15 @@ class Track(object):
 
     """
 
-    def __init__(self, init_x, init_P, dt, curr_frame, start_pose, init_heatmap, track_dim=2, det_dim=2, track_id=-1):
+    def __init__(self, dt, curr_frame, init_heatmap,
+                 state_shape, output_shape, track_dim=2, det_dim=2, track_id=-1):
+        init_x = [0.0, 0.0]
+        init_P = [[10.0, 0], [0, 10.0]]
+
         self.track_id = track_id
         self.color = np.random.rand(3)
         self.xs=[init_x]
         self.Ps=[init_P]
-
-        self.poses=[start_pose]
 
         self.KF = KalmanFilter(dim_x=track_dim, dim_z=det_dim)
         self.KF.F = np.array([[1, 0],
@@ -52,16 +54,34 @@ class Track(object):
         #missed for [delete_thresh] times? delete!
         self.delete_thresh = 1
 
-        self.pos_heatmap = init_heatmap
-        self.old_heatmap = init_heatmap
+        self.state_shape = state_shape
+        self.output_shape = output_shape
+
+        self.pos_heatmap = self.resize_to_state(init_heatmap)
+        self.old_heatmap = self.resize_to_state(init_heatmap)
+
+        self.poses=[self.get_peak_in_heatmap(self.pos_heatmap)]
 
     # ==Heatmap stuff==
+    def resize_to_state(self, heatmap):
+        return scipy.misc.imresize(heatmap, self.state_shape, interp='bicubic', mode='F')
+
     def get_peak_in_heatmap(self,heatmap):
         idx = np.unravel_index(heatmap.argmax(), heatmap.shape)
         return [idx[1],idx[0]]
 
     # ==Track state==
-    def get_velocity_estimate(self,old_heatmap,pos_heatmap):
+    def state_to_output(self, x, y):
+        return [x/self.state_shape[1]*self.output_shape[1],
+                y/self.state_shape[0]*self.output_shape[0]]
+
+    def states_to_outputs(self, xy):
+        # xy is of shape (N,2)
+        factors = [self.output_shape[1]/self.state_shape[1],
+                   self.output_shape[0]/self.state_shape[0]]
+        return xy*factors
+
+    def get_velocity_estimate(self,old_heatmap, pos_heatmap):
         old_peak = self.get_peak_in_heatmap(old_heatmap)
         new_peak = self.get_peak_in_heatmap(pos_heatmap)
         return np.subtract(new_peak,old_peak)
@@ -75,6 +95,8 @@ class Track(object):
         self.pos_heatmap = scipy.ndimage.filters.gaussian_filter(self.pos_heatmap, (self.KF.P[0,0],self.KF.P[0,0]))  # TODO: non-diag cov
 
     def track_update(self, id_heatmap):
+        id_heatmap = self.resize_to_state(id_heatmap)
+
         # heatmap
         normalizer = 1
         self.pos_heatmap = id_heatmap #(self.pos_heatmap*id_heatmap) / normalizer
@@ -111,6 +133,7 @@ class Track(object):
     # ==Evaluation==
     def get_track_state_dict(self):
         #pymot format
+        # TODO: don't forget to scale up from state shape to output shape.
         return {"height": 0, "width": 0, "id": self.track_id, "y": self.KF.x[2], "x": self.KF.x[0], "z": 0}
         #motchallenge format
         #TODO
@@ -121,15 +144,13 @@ class Track(object):
     def plot_track(self, plot_past_trajectory=False, plot_heatmap=False):
         #plot_covariance_ellipse((self.KF.x[0], self.KF.x[2]), self.KF.P, fc=self.color, alpha=0.4, std=[1,2,3])
         #print(self.poses)
-        plt.plot(self.poses[len(self.poses)-1][0],self.poses[len(self.poses)-1][1],linewidth=2.0, color=self.color)
+        plt.plot(*self.state_to_output(*self.poses[-1]), color=self.color, marker='o')
         if plot_past_trajectory and len(self.poses)>1:
-            for i in range(len(self.poses)-1):
-                #TODO: incorporate camera info if available
-                plt.plot([self.poses[i][0], self.poses[i+1][0]], [self.poses[i][1], self.poses[i+1][1]],
-                         linewidth=2.0, color=self.color)
+            outputs_xy = self.states_to_outputs(np.array(self.poses))
+            plt.plot(*outputs_xy.T, linewidth=2.0, color=self.color)
         if plot_heatmap:
             plt.imshow(self.pos_heatmap, alpha=0.5, interpolation='none', cmap='hot',
-                       extent=[0, 1920, 1080, 0], clim=(0, 10)) #TODO: shape
+                       extent=[0, self.output_shape[1], self.output_shape[0], 0], clim=(0, 10))
 
 #test = scipy.misc.imresize(image,(1920,1080),interp='bicubic',mode='F')
 #fix bb: 128x48

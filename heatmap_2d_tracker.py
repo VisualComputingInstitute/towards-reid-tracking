@@ -35,6 +35,8 @@ START_TIMES = [5543, 3607, 27244, 31182, 1, 22402, 18968, 46766]
 TRAIN_START, TRAIN_END = 49700, 227540
 SEQ_FPS = 60.0
 SEQ_SHAPE = (1080, 1920)
+STATE_SHAPE = (270, 480)
+HEATMAP_SHAPE = (36, 64)
 
 
 # ===functions===
@@ -119,7 +121,6 @@ track_lists = [[], [], [], [], [], [], [], []]
 already_tracked_ids = [[], [], [], [], [], [], [], []]
 
 dist_thresh = 100 #pixel #TODO: dependent on resolution
-HEATMAP_SHAPE = (36, 64)
 
 # Prepare output dirs
 for icam in range(1, 8+1):
@@ -144,7 +145,6 @@ def main():
                 id_heatmap = np.random.rand(*HEATMAP_SHAPE)
                 id_det_boxes = curr_cam_dets['boxes'][curr_cam_dets['TIDs'] == each_tracker.track_id]
                 id_heatmap = heatmap_sampling_for_dets(id_heatmap, id_det_boxes)
-                id_heatmap = scipy.misc.imresize(id_heatmap, SEQ_SHAPE, interp='bicubic', mode='F')
                 # ---PREDICT---
                 each_tracker.track_predict()
                 # ---UPDATE---
@@ -166,15 +166,11 @@ def main():
                 #if icam == 2:
                 #    import ipdb ; ipdb.set_trace()
                 new_heatmap = heatmap_sampling_for_dets(new_heatmap, [curr_cam_dets['boxes'][each_det_idx]])
-                new_heatmap = scipy.misc.imresize(new_heatmap, SEQ_SHAPE, interp='bicubic', mode='F')
-                new_peak = np.unravel_index(new_heatmap.argmax(), new_heatmap.shape)
-                start_pose = [new_peak[1], new_peak[0]]
-                init_x = [0.0, 0.0]
-                init_P = [[10.0, 0], [0, 10.0]]
                 new_id = curr_cam_dets['TIDs'][each_det_idx]
                 # TODO: get correct track_id (loop heatmap, instead of function call?# )
                 # TODO: get id_heatmap of that guy for init_heatmap
-                new_track = Track(init_x, init_P, dt, curr_frame, start_pose, new_heatmap, track_id=new_id)
+                new_track = Track(dt, curr_frame, new_heatmap, track_id=new_id,
+                                  state_shape=STATE_SHAPE, output_shape=SEQ_SHAPE)
                 track_lists[icam-1].append(new_track)
                 already_tracked_ids[icam-1].append(new_id)
 
