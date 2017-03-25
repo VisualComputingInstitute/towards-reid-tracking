@@ -50,21 +50,14 @@ def glob2loc(glob, cam):
     return glob - offset
 
 
-def heatmap_sampling_for_dets(heatmap, heatmap_scale, seq_shape, dets_boxes):
+def heatmap_sampling_for_dets(heatmap, dets_boxes):
+    H, W = heatmap.shape
     for l, t, w, h in dets_boxes:
-        l *= seq_shape[1] ; w *= seq_shape[1]
-        t *= seq_shape[0] ; h *= seq_shape[0]
-        cut_bb_top = max(0, round(t))/heatmap_scale
-        cut_bb_left = max(0, round(l))/heatmap_scale
-        cut_bb_bottom = min(seq_shape[0] - 1, round(t + h))/heatmap_scale
-        cut_bb_right = min(seq_shape[1] - 1, round(l + w))/heatmap_scale
-        cut_h = (cut_bb_bottom - cut_bb_top)
-        cut_w = (cut_bb_right - cut_bb_left)
-        center_x = round(cut_bb_top+cut_h/2)
-        center_y =  round(cut_bb_left+cut_w/2)
-        score = random.randint(10,50)# max(0,each_det[6])
-        add_idx = np.random.multivariate_normal([center_x, center_y], [[cut_h/heatmap_scale, 0], [0, cut_w/heatmap_scale]], int(score/heatmap_scale*2*cut_h))
-        np.add.at(heatmap,[[max(0,int(add_idx[i][0])) for i in range(len(add_idx))], [max(0,int(add_idx[i][1])) for i in range(len(add_idx))]],1)
+        # score is how many times more samples than pixels in the detection box.
+        score = random.randint(1,5)
+        add_idx = np.random.multivariate_normal([l+w/2, t+h/2], [[(w/6)**2, 0], [0, (h/6)**2]], int(np.prod(heatmap.shape)*h*w*score))
+        np.add.at(heatmap, [[int(np.clip(y, 0, 0.999)*H) for x,y in add_idx],
+                            [int(np.clip(x, 0, 0.999)*W) for x,y in add_idx]], 1)
     return heatmap
 
 
@@ -126,84 +119,92 @@ track_lists = [[], [], [], [], [], [], [], []]
 already_tracked_ids = [[], [], [], [], [], [], [], []]
 
 dist_thresh = 100 #pixel #TODO: dependent on resolution
-heatmap_scale = 20
+HEATMAP_SHAPE = (36, 64)
 
 # Prepare output dirs
 for icam in range(1, 8+1):
     makedirs(pjoin(args.outdir, 'camera{}'.format(icam)), exist_ok=True)
 
-tstart = time.time()
-# ===Tracking fun begins: iterate over frames===
-# TODO: global time (duke)
-for curr_frame in range(49700, 227540+1):
-    print("\rFrame {}, {} tracks".format(curr_frame, list(map(len, track_lists))), end='', flush=True)
+#@profile
+def main():
+    tstart = time.time()
+    # ===Tracking fun begins: iterate over frames===
+    # TODO: global time (duke)
+    for curr_frame in range(49700, 227540+1):
+        print("\rFrame {}, {} tracks".format(curr_frame, list(map(len, track_lists))), end='', flush=True)
 
-    curr_dets = slice_all(dets, dets['GFIDs'] == curr_frame)
-    num_curr_dets = len(curr_dets)
+        curr_dets = slice_all(dets, dets['GFIDs'] == curr_frame)
+        num_curr_dets = len(curr_dets)
 
-    for icam, track_list in zip(range(1, 8+1), track_lists):
-        curr_cam_dets = slice_all(curr_dets, curr_dets['Cams'] == icam)
-        ### A) update existing tracks
-        for itracker, each_tracker in enumerate(track_list):
-            # get ID_heatmap
-            id_heatmap = np.random.rand(int(SEQ_SHAPE[0]/heatmap_scale), int(SEQ_SHAPE[1]/heatmap_scale))
-            id_det_boxes = curr_cam_dets['boxes'][curr_cam_dets['TIDs'] == each_tracker.track_id]
-            id_heatmap = heatmap_sampling_for_dets(id_heatmap, heatmap_scale, SEQ_SHAPE, id_det_boxes)
-            id_heatmap = scipy.misc.imresize(id_heatmap, SEQ_SHAPE, interp='bicubic', mode='F')
-            # ---PREDICT---
-            each_tracker.track_predict()
-            # ---UPDATE---
-            each_tracker.track_update(id_heatmap)
-            if each_tracker.pos_heatmap.max() > 2.0:
-                each_tracker.track_is_matched(curr_frame)
-            else:
-                each_tracker.track_is_missed(curr_frame)
-
-
-
-    ### B) get new tracks from general heatmap
-    for icam in range(1, 8 + 1):
-        # TODO: ID management (duke)
-        curr_cam_dets = slice_all(curr_dets, curr_dets['Cams'] == icam)
-        new_det_indices = np.where(np.logical_not(np.in1d(curr_cam_dets['TIDs'], already_tracked_ids[icam-1])))[0]
-        for each_det_idx in new_det_indices:
-            new_heatmap = np.random.rand(int(SEQ_SHAPE[0] / heatmap_scale), int(SEQ_SHAPE[1] / heatmap_scale))
-            new_heatmap = heatmap_sampling_for_dets(new_heatmap, heatmap_scale, SEQ_SHAPE, [curr_cam_dets['boxes'][each_det_idx]])
-            new_heatmap = scipy.misc.imresize(new_heatmap, SEQ_SHAPE, interp='bicubic', mode='F')
-            new_peak = np.unravel_index(new_heatmap.argmax(), new_heatmap.shape)
-            start_pose = [new_peak[1], new_peak[0]]
-            init_x = [0.0, 0.0]
-            init_P = [[10.0, 0], [0, 10.0]]
-            new_id = curr_cam_dets['TIDs'][each_det_idx]
-            # TODO: get correct track_id (loop heatmap, instead of function call?# )
-            # TODO: get id_heatmap of that guy for init_heatmap
-            new_track = Track(init_x, init_P, dt, curr_frame, start_pose, new_heatmap, track_id=new_id)
-            track_lists[icam-1].append(new_track)
-            already_tracked_ids[icam-1].append(new_id)
+        for icam, track_list in zip(range(1, 8+1), track_lists):
+            curr_cam_dets = slice_all(curr_dets, curr_dets['Cams'] == icam)
+            ### A) update existing tracks
+            for itracker, each_tracker in enumerate(track_list):
+                # get ID_heatmap
+                id_heatmap = np.random.rand(*HEATMAP_SHAPE)
+                id_det_boxes = curr_cam_dets['boxes'][curr_cam_dets['TIDs'] == each_tracker.track_id]
+                id_heatmap = heatmap_sampling_for_dets(id_heatmap, id_det_boxes)
+                id_heatmap = scipy.misc.imresize(id_heatmap, SEQ_SHAPE, interp='bicubic', mode='F')
+                # ---PREDICT---
+                each_tracker.track_predict()
+                # ---UPDATE---
+                each_tracker.track_update(id_heatmap)
+                if each_tracker.pos_heatmap.max() > 2.0:
+                    each_tracker.track_is_matched(curr_frame)
+                else:
+                    each_tracker.track_is_missed(curr_frame)
 
 
-    ### C) further track-management
-    # delete tracks marked as 'deleted' in this tracking cycle #TODO: manage in other list for re-id
-    #track_list = [i for i in track_list if i.status != 'deleted']
 
-    # ===visualization===
-    if args.vis:
-        for icam, track_list in zip(range(1, 8 + 1), track_lists):
-            # open image file
-            curr_image = plt.imread(pjoin(args.basedir, 'frames/camera{}/{}.jpg'.format(icam, glob2loc(curr_frame, icam))))  # TODO
-            plt.imshow(curr_image)
+        ### B) get new tracks from general heatmap
+        for icam in range(1, 8 + 1):
+            # TODO: ID management (duke)
+            curr_cam_dets = slice_all(curr_dets, curr_dets['Cams'] == icam)
+            new_det_indices = np.where(np.logical_not(np.in1d(curr_cam_dets['TIDs'], already_tracked_ids[icam-1])))[0]
+            for each_det_idx in new_det_indices:
+                new_heatmap = np.random.rand(*HEATMAP_SHAPE)
+                #if icam == 2:
+                #    import ipdb ; ipdb.set_trace()
+                new_heatmap = heatmap_sampling_for_dets(new_heatmap, [curr_cam_dets['boxes'][each_det_idx]])
+                new_heatmap = scipy.misc.imresize(new_heatmap, SEQ_SHAPE, interp='bicubic', mode='F')
+                new_peak = np.unravel_index(new_heatmap.argmax(), new_heatmap.shape)
+                start_pose = [new_peak[1], new_peak[0]]
+                init_x = [0.0, 0.0]
+                init_P = [[10.0, 0], [0, 10.0]]
+                new_id = curr_cam_dets['TIDs'][each_det_idx]
+                # TODO: get correct track_id (loop heatmap, instead of function call?# )
+                # TODO: get id_heatmap of that guy for init_heatmap
+                new_track = Track(init_x, init_P, dt, curr_frame, start_pose, new_heatmap, track_id=new_id)
+                track_lists[icam-1].append(new_track)
+                already_tracked_ids[icam-1].append(new_id)
 
-            # plot (active) tracks
-            for each_tracker in track_list:
-                #if(each_tracker.track_id==3):
-                each_tracker.plot_track(plot_past_trajectory=True,plot_heatmap=False)
-                #break
-                #plt.gca().add_patch(patches.Rectangle((each_tracker.KF.x[0]-50, each_tracker.KF.x[2]-200),
-                #                                        100, 200, fill=False, linewidth=3, edgecolor=each_tracker.color))
 
-            #plt.imshow(curr_heatmap,alpha=0.5,interpolation='none',cmap='hot',extent=[0,curr_image.shape[1],curr_image.shape[0],0],clim=(0, 10))
-            plt.savefig(pjoin(args.outdir, 'camera{}/res_img_{:06d}.jpg'.format(icam, curr_frame)))
-            #plt.show()
-            plt.close()
+        ### C) further track-management
+        # delete tracks marked as 'deleted' in this tracking cycle #TODO: manage in other list for re-id
+        #track_list = [i for i in track_list if i.status != 'deleted']
 
-print('FPS: {:.3f}'.format((TRAIN_END+1 - TRAIN_START) / (time.time() - tstart)))
+        # ===visualization===
+        if args.vis:
+            for icam, track_list in zip(range(1, 8 + 1), track_lists):
+                # open image file
+                curr_image = plt.imread(pjoin(args.basedir, 'frames/camera{}/{}.jpg'.format(icam, glob2loc(curr_frame, icam))))  # TODO
+                plt.imshow(curr_image)
+
+                # plot (active) tracks
+                for each_tracker in track_list:
+                    #if(each_tracker.track_id==3):
+                    each_tracker.plot_track(plot_past_trajectory=True, plot_heatmap=True)
+                    #break
+                    #plt.gca().add_patch(patches.Rectangle((each_tracker.KF.x[0]-50, each_tracker.KF.x[2]-200),
+                    #                                        100, 200, fill=False, linewidth=3, edgecolor=each_tracker.color))
+
+                #plt.imshow(curr_heatmap,alpha=0.5,interpolation='none',cmap='hot',extent=[0,curr_image.shape[1],curr_image.shape[0],0],clim=(0, 10))
+                plt.savefig(pjoin(args.outdir, 'camera{}/res_img_{:06d}.jpg'.format(icam, curr_frame)))
+                #plt.show()
+                plt.close()
+
+    print('FPS: {:.3f}'.format((TRAIN_END+1 - TRAIN_START) / (time.time() - tstart)))
+
+
+if __name__ == '__main__':
+    main()
