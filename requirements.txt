@@ -1,2 +1,4 @@
 filterpy
 munkres
+pillow
+h5py
