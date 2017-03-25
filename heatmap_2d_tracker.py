@@ -126,6 +126,16 @@ dist_thresh = 100 #pixel #TODO: dependent on resolution
 for icam in range(1, 8+1):
     makedirs(pjoin(args.outdir, 'camera{}'.format(icam)), exist_ok=True)
 
+
+def embed_image(image):
+    return None  # z.B. (30,60,128)
+
+
+def search_person(image_embedding, person_embedding, fake_track_id, fake_curr_cam_dets):
+    id_heatmap = np.random.rand(*HEATMAP_SHAPE)
+    id_det_boxes = fake_curr_cam_dets['boxes'][fake_curr_cam_dets['TIDs'] == fake_track_id]
+    return heatmap_sampling_for_dets(id_heatmap, id_det_boxes)
+
 #@profile
 def main():
     tstart = time.time()
@@ -139,14 +149,15 @@ def main():
         curr_dets = slice_all(dets, dets['GFIDs'] == curr_frame)
         num_curr_dets = len(curr_dets)
 
+        image_embeddings = list(map(embed_image, images))
+
         for icam, track_list in zip(range(1, 8+1), track_lists):
             curr_cam_dets = slice_all(curr_dets, curr_dets['Cams'] == icam)
             ### A) update existing tracks
             for itracker, each_tracker in enumerate(track_list):
                 # get ID_heatmap
-                id_heatmap = np.random.rand(*HEATMAP_SHAPE)
-                id_det_boxes = curr_cam_dets['boxes'][curr_cam_dets['TIDs'] == each_tracker.track_id]
-                id_heatmap = heatmap_sampling_for_dets(id_heatmap, id_det_boxes)
+                id_heatmap = search_person(image_embeddings[icam-1], each_tracker.embedding,
+                                           fake_track_id=each_tracker.track_id, fake_curr_cam_dets=curr_cam_dets)
                 # ---PREDICT---
                 each_tracker.track_predict()
                 # ---UPDATE---
