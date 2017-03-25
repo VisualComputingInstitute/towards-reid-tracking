@@ -149,12 +149,33 @@ def main(net):
                     #                                        100, 200, fill=False, linewidth=3, edgecolor=each_tracker.color))
 
                 #plt.imshow(curr_heatmap,alpha=0.5,interpolation='none',cmap='hot',extent=[0,curr_image.shape[1],curr_image.shape[0],0],clim=(0, 10))
-                plt.savefig(pjoin(args.outdir, 'camera{}/res_img_{:06d}.jpg'.format(icam, curr_frame)))
+                savefig(pjoin(args.outdir, 'camera{}/res_img_{:06d}.jpg'.format(icam, curr_frame)), quality=80)
                 #plt.show()
                 plt.close()
 
         global g_frames
         g_frames += 1
+
+
+# Heavily adapted and fixed from http://robotics.usc.edu/~ampereir/wordpress/?p=626
+def savefig(fname, fig=None, orig_size=None, **kw):
+    if fig is None:
+        fig = plt.gcf()
+    fig.patch.set_alpha(0)
+
+    w, h = fig.get_size_inches()
+    if orig_size is not None:  # Aspect ratio scaling if required
+        fw, fh = w, h
+        w, h = orig_size
+        fig.set_size_inches((fw, (fw/w)*h))
+        fig.set_dpi((fw/w)*fig.get_dpi())
+
+    ax = fig.gca()
+    ax.set_frame_on(False)
+    ax.set_xticks([]); ax.set_yticks([])
+    ax.set_axis_off()
+    #ax.set_xlim(0, w); ax.set_ylim(h, 0)
+    fig.savefig(fname, transparent=True, bbox_inches='tight', pad_inches=0, **kw)
 
 
 if __name__ == '__main__':
