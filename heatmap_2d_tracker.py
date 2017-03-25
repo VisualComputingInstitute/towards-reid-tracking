@@ -82,6 +82,9 @@ class FakeNeuralNewsNetwork:
         return heatmap
 
 
+g_frames = 0  # Global counter for correct FPS in all cases
+
+
 #@profile
 def main(net):
     track_lists = [[], [], [], [], [], [], [], []]
@@ -150,6 +153,9 @@ def main(net):
                 #plt.show()
                 plt.close()
 
+        global g_frames
+        g_frames += 1
+
 
 if __name__ == '__main__':
 
@@ -176,4 +182,4 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         print()
 
-    print('FPS: {:.3f}'.format((lib.TRAIN_END+1 - lib.TRAIN_START) / (time.time() - tstart)))
+    print('FPS: {:.3f}'.format(g_frames / (time.time() - tstart)))
