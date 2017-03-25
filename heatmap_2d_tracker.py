@@ -6,6 +6,7 @@ from __future__ import division
 
 import argparse
 from os.path import join as pjoin
+from os import makedirs
 import time
 
 # the usual suspects
@@ -13,8 +14,9 @@ import numpy as np
 import random
 import scipy
 import numpy.random as rnd
-import matplotlib
-#matplotlib.use('GTK')
+import matplotlib as mpl
+#mpl.use('Agg')
+#mpl.use('GTK')
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import h5py
@@ -36,6 +38,18 @@ SEQ_SHAPE = (1080, 1920)
 
 
 # ===functions===
+def loc2glob(loc, cam):
+    # Compute global frame numbers once.
+    offset = START_TIMES[cam-1] - 1
+    return loc + offset
+
+
+def glob2loc(glob, cam):
+    # Compute global frame numbers once.
+    offset = START_TIMES[cam-1] - 1
+    return glob - offset
+
+
 def heatmap_sampling_for_dets(heatmap, heatmap_scale, seq_shape, dets_boxes):
     for l, t, w, h in dets_boxes:
         l *= seq_shape[1] ; w *= seq_shape[1]
@@ -114,19 +128,26 @@ already_tracked_ids = []
 dist_thresh = 100 #pixel #TODO: dependent on resolution
 heatmap_scale = 20
 
+# Prepare output dirs
+for icam in range(1, 8+1):
+    makedirs(pjoin(args.outdir, 'camera{}'.format(icam)), exist_ok=True)
+
 tstart = time.time()
 # ===Tracking fun begins: iterate over frames===
 # TODO: global time (duke)
 for curr_frame in range(49700, 227540+1):
-    curr_dets = slice_all(dets, dets['GFID'] == curr_frame)
+    print("\rFrame {}, {} tracks".format(curr_frame, list(map(len, track_lists))), end='', flush=True)
+
+    curr_dets = slice_all(dets, dets['GFIDs'] == curr_frame)
     num_curr_dets = len(curr_dets)
 
     for icam, track_list in zip(range(1, 8+1), track_lists):
+        curr_cam_dets = slice_all(curr_dets, curr_dets['Cams'] == icam)
         ### A) update existing tracks
-        for each_tracker in track_list:
+        for itracker, each_tracker in enumerate(track_list):
             # get ID_heatmap
             id_heatmap = np.random.rand(int(SEQ_SHAPE[0]/heatmap_scale), int(SEQ_SHAPE[1]/heatmap_scale))
-            id_det_boxes = curr_dets['boxes'][curr_dets['TIDs'] == each_tracker.track_id]
+            id_det_boxes = curr_cam_dets['boxes'][curr_cam_dets['TIDs'] == each_tracker.track_id]
             id_heatmap = heatmap_sampling_for_dets(id_heatmap, heatmap_scale, SEQ_SHAPE, id_det_boxes)
             id_heatmap = scipy.misc.imresize(id_heatmap, SEQ_SHAPE, interp='bicubic', mode='F')
             # ---PREDICT---
@@ -143,20 +164,22 @@ for curr_frame in range(49700, 227540+1):
     ### B) get new tracks from general heatmap
     for icam in range(1, 8 + 1):
         # TODO: ID management (duke)
-        new_det_indices = np.where(np.logical_not(np.in1d(curr_dets['TIDs'], already_tracked_ids)))[0]
+        # TODO: already_tracked_ids needs to be per-cam too.
+        curr_cam_dets = slice_all(curr_dets, curr_dets['Cams'] == icam)
+        new_det_indices = np.where(np.logical_not(np.in1d(curr_cam_dets['TIDs'], already_tracked_ids)))[0]
         for each_det_idx in new_det_indices:
             new_heatmap = np.random.rand(int(SEQ_SHAPE[0] / heatmap_scale), int(SEQ_SHAPE[1] / heatmap_scale))
-            new_heatmap = heatmap_sampling_for_dets(new_heatmap, heatmap_scale, SEQ_SHAPE, [curr_dets['boxes'][each_det_idx]])
+            new_heatmap = heatmap_sampling_for_dets(new_heatmap, heatmap_scale, SEQ_SHAPE, [curr_cam_dets['boxes'][each_det_idx]])
             new_heatmap = scipy.misc.imresize(new_heatmap, SEQ_SHAPE, interp='bicubic', mode='F')
             new_peak = np.unravel_index(new_heatmap.argmax(), new_heatmap.shape)
             start_pose = [new_peak[1], new_peak[0]]
             init_x = [0.0, 0.0]
             init_P = [[10.0, 0], [0, 10.0]]
-            new_id = curr_dets['TIDs'][each_det_idx]
+            new_id = curr_cam_dets['TIDs'][each_det_idx]
             # TODO: get correct track_id (loop heatmap, instead of function call?# )
             # TODO: get id_heatmap of that guy for init_heatmap
             new_track = Track(init_x, init_P, dt, curr_frame, start_pose, new_heatmap, track_id=new_id)
-            track_lists[icam].append(new_track)
+            track_lists[icam-1].append(new_track)
             already_tracked_ids.append(new_id)
 
 
@@ -168,7 +191,7 @@ for curr_frame in range(49700, 227540+1):
     if args.vis:
         for icam, track_list in zip(range(1, 8 + 1), track_lists):
             # open image file
-            curr_image = plt.imread(pjoin(args.basedir, 'frames/camera{}/{}.jpg'.format(icam, curr_frame)))  # TODO
+            curr_image = plt.imread(pjoin(args.basedir, 'frames/camera{}/{}.jpg'.format(icam, glob2loc(curr_frame, icam))))  # TODO
             plt.imshow(curr_image)
 
             # plot (active) tracks
