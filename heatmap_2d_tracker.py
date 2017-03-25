@@ -11,9 +11,6 @@ import time
 
 # the usual suspects
 import numpy as np
-import random
-import scipy
-import numpy.random as rnd
 import matplotlib as mpl
 #mpl.use('Agg')
 #mpl.use('GTK')
@@ -24,12 +21,9 @@ import matplotlib.patches as patches
 import lib
 from track import Track
 
-#other stuff
-from scipy.spatial.distance import euclidean,mahalanobis
-import json
-from pprint import pprint
 
 SEQ_FPS = 60.0
+SEQ_DT = 1./SEQ_FPS
 SEQ_SHAPE = (1080, 1920)
 STATE_SHAPE = (270, 480)
 HEATMAP_SHAPE = (36, 64)
@@ -40,60 +34,46 @@ def heatmap_sampling_for_dets(heatmap, dets_boxes):
     H, W = heatmap.shape
     for l, t, w, h in dets_boxes:
         # score is how many times more samples than pixels in the detection box.
-        score = random.randint(1,5)
+        score = np.random.randint(1,5)
         add_idx = np.random.multivariate_normal([l+w/2, t+h/2], [[(w/6)**2, 0], [0, (h/6)**2]], int(np.prod(heatmap.shape)*h*w*score))
         np.add.at(heatmap, [[int(np.clip(y, 0, 0.999)*H) for x,y in add_idx],
                             [int(np.clip(x, 0, 0.999)*W) for x,y in add_idx]], 1)
     return heatmap
 
-
-parser = argparse.ArgumentParser(description='2D tracker test.')
-parser.add_argument('--basedir', nargs='?', default='/work/breuers/dukeMTMC/',
-                    help='Path to `train` folder of 2DMOT2015.')
-parser.add_argument('--outdir', nargs='?', default='/home/breuers/results/duke_mtmc/',
-                    help='Where to store generated output. Only needed if `--vis` is also passed.')
-parser.add_argument('--vis', action='store_true', default=True,
-                    help='Generate and save visualization of the results.')
-args = parser.parse_args()
-print(args)
-
-dets = lib.load_trainval(pjoin(args.basedir, 'ground_truth', 'trainval.mat'))
-
 # ===init tracks and other stuff==
-track_id = 1
-dt = 1./SEQ_FPS
 
-track_lists = [[], [], [], [], [], [], [], []]
-
-dist_thresh = 100 #pixel #TODO: dependent on resolution
-
-# Prepare output dirs
-for icam in range(1, 8+1):
-    makedirs(pjoin(args.outdir, 'camera{}'.format(icam)), exist_ok=True)
 
 class FakeNews:
-    def __init__(self):
+    def __init__(self, dets):
         self.already_tracked_ids = [[], [], [], [], [], [], [], []]
+        self.dets = dets
+
+
+    def tick(self, curr_frame):
+        self.curr_dets = lib.slice_all(self.dets, self.dets['GFIDs'] == curr_frame)
+
+
+    def fake_camera(self, icam):
+        self.curr_cam_dets = lib.slice_all(self.curr_dets, self.curr_dets['Cams'] == icam)
+
 
     def embed_image(self, image):
         return None  # z.B. (30,60,128)
 
 
-    def search_person(self, image_embedding, person_embedding, fake_track_id, fake_curr_cam_dets):
+    def search_person(self, image_embedding, person_embedding, fake_track_id):
         id_heatmap = np.random.rand(*HEATMAP_SHAPE)
-        id_det_boxes = fake_curr_cam_dets['boxes'][fake_curr_cam_dets['TIDs'] == fake_track_id]
+        id_det_boxes = self.curr_cam_dets['boxes'][self.curr_cam_dets['TIDs'] == fake_track_id]
         return heatmap_sampling_for_dets(id_heatmap, id_det_boxes)
 
 
-    def personness(self, image, known_embeddings,
-                   fake_curr_dets, fake_icam):
-        curr_cam_dets = lib.slice_all(fake_curr_dets, fake_curr_dets['Cams'] == fake_icam)
-        new_det_indices = np.where(np.logical_not(np.in1d(curr_cam_dets['TIDs'], self.already_tracked_ids[icam - 1])))[0]
+    def personness(self, image, known_embeddings):
+        new_det_indices = np.where(np.logical_not(np.in1d(self.curr_cam_dets['TIDs'], self.already_tracked_ids[icam - 1])))[0]
         new_heatmaps_and_ids = []
         for each_det_idx in new_det_indices:
             new_heatmap = np.random.rand(*HEATMAP_SHAPE)
-            new_heatmap = heatmap_sampling_for_dets(new_heatmap, [curr_cam_dets['boxes'][each_det_idx]])
-            new_id = curr_cam_dets['TIDs'][each_det_idx]
+            new_heatmap = heatmap_sampling_for_dets(new_heatmap, [self.curr_cam_dets['boxes'][each_det_idx]])
+            new_id = self.curr_cam_dets['TIDs'][each_det_idx]
             # TODO: get correct track_id (loop heatmap, instead of function call?# )
             # TODO: get id_heatmap of that guy for init_heatmap
             self.already_tracked_ids[icam - 1].append(new_id)
@@ -102,30 +82,27 @@ class FakeNews:
 
 
 #@profile
-def main():
-    tstart = time.time()
-
-    fake_neural_news_network = FakeNews()
+def main(fake_neural_news_network):
+    track_lists = [[], [], [], [], [], [], [], []]
 
     # ===Tracking fun begins: iterate over frames===
     # TODO: global time (duke)
     for curr_frame in range(49700, 227540+1):
         print("\rFrame {}, {} tracks".format(curr_frame, list(map(len, track_lists))), end='', flush=True)
+        fake_neural_news_network.tick(curr_frame)
 
         images = [plt.imread(pjoin(args.basedir, 'frames/camera{}/{}.jpg'.format(icam, lib.glob2loc(curr_frame, icam)))) for icam in range(1,8+1)]
-
-        curr_dets = lib.slice_all(dets, dets['GFIDs'] == curr_frame)
-        num_curr_dets = len(curr_dets)
 
         image_embeddings = list(map(fake_neural_news_network.embed_image, images))
 
         for icam, track_list in zip(range(1, 8+1), track_lists):
-            curr_cam_dets = lib.slice_all(curr_dets, curr_dets['Cams'] == icam)
+            fake_neural_news_network.fake_camera(icam)
+
             ### A) update existing tracks
             for itracker, each_tracker in enumerate(track_list):
                 # get ID_heatmap
                 id_heatmap = fake_neural_news_network.search_person(image_embeddings[icam-1], each_tracker.embedding,
-                                                                    fake_track_id=each_tracker.track_id, fake_curr_cam_dets=curr_cam_dets)
+                                                                    fake_track_id=each_tracker.track_id)
                 # ---PREDICT---
                 each_tracker.track_predict()
                 # ---UPDATE---
@@ -135,12 +112,13 @@ def main():
 
         ### B) get new tracks from general heatmap
         for icam in range(1, 8 + 1):
+            fake_neural_news_network.fake_camera(icam)
+
             # TODO: ID management (duke)
-            for new_heatmap, new_id in fake_neural_news_network.personness(images[icam-1], known_embeddings=None,
-                                                                           fake_curr_dets=curr_dets, fake_icam=icam):
+            for new_heatmap, new_id in fake_neural_news_network.personness(images[icam-1], known_embeddings=None):
                 # TODO: get correct track_id (loop heatmap, instead of function call?# )
                 # TODO: get id_heatmap of that guy for init_heatmap
-                new_track = Track(dt, curr_frame, new_heatmap, images[icam-1], track_id=new_id,
+                new_track = Track(SEQ_DT, curr_frame, new_heatmap, images[icam-1], track_id=new_id,
                                   state_shape=STATE_SHAPE, output_shape=SEQ_SHAPE)
                 track_lists[icam-1].append(new_track)
 
@@ -170,8 +148,30 @@ def main():
                 #plt.show()
                 plt.close()
 
-    print('FPS: {:.3f}'.format((TRAIN_END+1 - TRAIN_START) / (time.time() - tstart)))
-
 
 if __name__ == '__main__':
-    main()
+
+    parser = argparse.ArgumentParser(description='2D tracker test.')
+    parser.add_argument('--basedir', nargs='?', default='/work/breuers/dukeMTMC/',
+                        help='Path to `train` folder of 2DMOT2015.')
+    parser.add_argument('--outdir', nargs='?', default='/home/breuers/results/duke_mtmc/',
+                        help='Where to store generated output. Only needed if `--vis` is also passed.')
+    parser.add_argument('--vis', action='store_true', default=True,
+                        help='Generate and save visualization of the results.')
+    args = parser.parse_args()
+    print(args)
+
+    # This is all for faking the network.
+    net = FakeNews(lib.load_trainval(pjoin(args.basedir, 'ground_truth', 'trainval.mat')))
+
+    # Prepare output dirs
+    for icam in range(1, 8+1):
+        makedirs(pjoin(args.outdir, 'camera{}'.format(icam)), exist_ok=True)
+
+    tstart = time.time()
+    try:
+        main(net)
+    except KeyboardInterrupt:
+        print()
+
+    print('FPS: {:.3f}'.format((lib.TRAIN_END+1 - lib.TRAIN_START) / (time.time() - tstart)))
