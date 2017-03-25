@@ -29,7 +29,7 @@ STATE_SHAPE = (270, 480)
 HEATMAP_SHAPE = (36, 64)
 
 
-class FakeNews:
+class FakeNeuralNewsNetwork:
     def __init__(self, dets):
         self.already_tracked_ids = [[], [], [], [], [], [], [], []]
         self.dets = dets
@@ -51,13 +51,13 @@ class FakeNews:
         return None  # z.B. (30,60,128)
 
 
-    def search_person(self, image_embedding, person_embedding, fake_track_id):
+    def search_person(self, img_embs, person_emb, fake_track_id):
         id_heatmap = np.random.rand(*HEATMAP_SHAPE)
         id_det_boxes = self.curr_cam_dets['boxes'][self.curr_cam_dets['TIDs'] == fake_track_id]
         return self._heatmap_sampling_for_dets(id_heatmap, id_det_boxes)
 
 
-    def personness(self, image, known_embeddings):
+    def personness(self, image, known_embs):
         new_det_indices = np.where(np.logical_not(np.in1d(self.curr_cam_dets['TIDs'], self.already_tracked_ids[icam - 1])))[0]
         new_heatmaps_and_ids = []
         for each_det_idx in new_det_indices:
@@ -83,27 +83,27 @@ class FakeNews:
 
 
 #@profile
-def main(fake_neural_news_network):
+def main(net):
     track_lists = [[], [], [], [], [], [], [], []]
 
     # ===Tracking fun begins: iterate over frames===
     # TODO: global time (duke)
     for curr_frame in range(49700, 227540+1):
         print("\rFrame {}, {} tracks".format(curr_frame, list(map(len, track_lists))), end='', flush=True)
-        fake_neural_news_network.tick(curr_frame)
+        net.tick(curr_frame)
 
         images = [plt.imread(pjoin(args.basedir, 'frames/camera{}/{}.jpg'.format(icam, lib.glob2loc(curr_frame, icam)))) for icam in range(1,8+1)]
 
-        image_embeddings = list(map(fake_neural_news_network.embed_image, images))
+        image_embeddings = list(map(net.embed_image, images))
 
         for icam, track_list in zip(range(1, 8+1), track_lists):
-            fake_neural_news_network.fake_camera(icam)
+            net.fake_camera(icam)
 
             ### A) update existing tracks
             for itracker, each_tracker in enumerate(track_list):
                 # get ID_heatmap
-                id_heatmap = fake_neural_news_network.search_person(image_embeddings[icam-1], each_tracker.embedding,
-                                                                    fake_track_id=each_tracker.track_id)
+                id_heatmap = net.search_person(image_embeddings[icam-1], each_tracker.embedding,
+                                               fake_track_id=each_tracker.track_id)
                 # ---PREDICT---
                 each_tracker.track_predict()
                 # ---UPDATE---
@@ -113,10 +113,10 @@ def main(fake_neural_news_network):
 
         ### B) get new tracks from general heatmap
         for icam in range(1, 8 + 1):
-            fake_neural_news_network.fake_camera(icam)
+            net.fake_camera(icam)
 
             # TODO: ID management (duke)
-            for new_heatmap, new_id in fake_neural_news_network.personness(images[icam-1], known_embeddings=None):
+            for new_heatmap, new_id in net.personness(images[icam-1], known_embs=None):
                 # TODO: get correct track_id (loop heatmap, instead of function call?# )
                 # TODO: get id_heatmap of that guy for init_heatmap
                 new_track = Track(net.embed_crop, SEQ_DT,
@@ -164,7 +164,7 @@ if __name__ == '__main__':
     print(args)
 
     # This is all for faking the network.
-    net = FakeNews(lib.load_trainval(pjoin(args.basedir, 'ground_truth', 'trainval.mat')))
+    net = FakeNeuralNewsNetwork(lib.load_trainval(pjoin(args.basedir, 'ground_truth', 'trainval.mat')))
 
     # Prepare output dirs
     for icam in range(1, 8+1):
