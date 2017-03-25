@@ -19,11 +19,9 @@ import matplotlib as mpl
 #mpl.use('GTK')
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-import h5py
-from scipy.io import loadmat
-
 
 #tracker stuff
+import lib
 from track import Track
 
 #other stuff
@@ -31,8 +29,6 @@ from scipy.spatial.distance import euclidean,mahalanobis
 import json
 from pprint import pprint
 
-START_TIMES = [5543, 3607, 27244, 31182, 1, 22402, 18968, 46766]
-TRAIN_START, TRAIN_END = 49700, 227540
 SEQ_FPS = 60.0
 SEQ_SHAPE = (1080, 1920)
 STATE_SHAPE = (270, 480)
@@ -40,18 +36,6 @@ HEATMAP_SHAPE = (36, 64)
 
 
 # ===functions===
-def loc2glob(loc, cam):
-    # Compute global frame numbers once.
-    offset = START_TIMES[cam-1] - 1
-    return loc + offset
-
-
-def glob2loc(glob, cam):
-    # Compute global frame numbers once.
-    offset = START_TIMES[cam-1] - 1
-    return glob - offset
-
-
 def heatmap_sampling_for_dets(heatmap, dets_boxes):
     H, W = heatmap.shape
     for l, t, w, h in dets_boxes:
@@ -63,39 +47,6 @@ def heatmap_sampling_for_dets(heatmap, dets_boxes):
     return heatmap
 
 
-def slice_all(f, s):
-    return {k: v[s] for k,v in f.items()}
-
-
-def load_trainval(fname, time_range=[TRAIN_START, TRAIN_END]):
-    try:
-        m = loadmat(fname)['trainData']
-    except NotImplementedError:
-        with h5py.File(fname, 'r') as f:
-            m = np.array(f['trainData']).T
-
-    data = {
-        'Cams': np.array(m[:,0], dtype=int),
-        'TIDs': np.array(m[:,1], dtype=int),
-        'LFIDs': np.array(m[:,2], dtype=int),
-        'boxes': np.array(m[:,3:7], dtype=float),
-        'world': np.array(m[:,7:9]),
-        'feet': np.array(m[:,9:]),
-    }
-
-    # boxes are l t w h
-    data['boxes'][:,0] /= SEQ_SHAPE[1]
-    data['boxes'][:,1] /= SEQ_SHAPE[0]
-    data['boxes'][:,2] /= SEQ_SHAPE[1]
-    data['boxes'][:,3] /= SEQ_SHAPE[0]
-
-    # Compute global frame numbers once.
-    data['GFIDs'] = np.array(data['LFIDs'])
-    for icam, t0 in zip(range(1,9), START_TIMES):
-        data['GFIDs'][data['Cams'] == icam] += t0 - 1
-
-    return slice_all(data, (time_range[0] <= data['GFIDs']) & (data['GFIDs'] <= time_range[1]))
-
 parser = argparse.ArgumentParser(description='2D tracker test.')
 parser.add_argument('--basedir', nargs='?', default='/work/breuers/dukeMTMC/',
                     help='Path to `train` folder of 2DMOT2015.')
@@ -106,12 +57,7 @@ parser.add_argument('--vis', action='store_true', default=True,
 args = parser.parse_args()
 print(args)
 
-dets = load_trainval(pjoin(args.basedir, 'ground_truth', 'trainval.mat'), time_range=(TRAIN_START, TRAIN_END))
-
-    # > 'det_list[x][y]',  to access detection x, data y
-    # one detection line in 2D-MOTChallenge format:
-    # field     0        1     2          3         4           5            6       7    8    9
-    # data      <frame>  <id>  <bb_left>  <bb_top>  <bb_width>  <bb_height>  <conf>  <x>  <y>  <z>
+dets = lib.load_trainval(pjoin(args.basedir, 'ground_truth', 'trainval.mat'))
 
 # ===init tracks and other stuff==
 track_id = 1
@@ -141,7 +87,7 @@ class FakeNews:
 
     def personness(self, image, known_embeddings,
                    fake_curr_dets, fake_icam):
-        curr_cam_dets = slice_all(fake_curr_dets, fake_curr_dets['Cams'] == fake_icam)
+        curr_cam_dets = lib.slice_all(fake_curr_dets, fake_curr_dets['Cams'] == fake_icam)
         new_det_indices = np.where(np.logical_not(np.in1d(curr_cam_dets['TIDs'], self.already_tracked_ids[icam - 1])))[0]
         new_heatmaps_and_ids = []
         for each_det_idx in new_det_indices:
@@ -166,15 +112,15 @@ def main():
     for curr_frame in range(49700, 227540+1):
         print("\rFrame {}, {} tracks".format(curr_frame, list(map(len, track_lists))), end='', flush=True)
 
-        images = [plt.imread(pjoin(args.basedir, 'frames/camera{}/{}.jpg'.format(icam, glob2loc(curr_frame, icam)))) for icam in range(1,8+1)]
+        images = [plt.imread(pjoin(args.basedir, 'frames/camera{}/{}.jpg'.format(icam, lib.glob2loc(curr_frame, icam)))) for icam in range(1,8+1)]
 
-        curr_dets = slice_all(dets, dets['GFIDs'] == curr_frame)
+        curr_dets = lib.slice_all(dets, dets['GFIDs'] == curr_frame)
         num_curr_dets = len(curr_dets)
 
         image_embeddings = list(map(fake_neural_news_network.embed_image, images))
 
         for icam, track_list in zip(range(1, 8+1), track_lists):
-            curr_cam_dets = slice_all(curr_dets, curr_dets['Cams'] == icam)
+            curr_cam_dets = lib.slice_all(curr_dets, curr_dets['Cams'] == icam)
             ### A) update existing tracks
             for itracker, each_tracker in enumerate(track_list):
                 # get ID_heatmap
@@ -207,7 +153,7 @@ def main():
         if args.vis:
             for icam, track_list in zip(range(1, 8 + 1), track_lists):
                 # open image file
-                #curr_image = plt.imread(pjoin(args.basedir, 'frames/camera{}/{}.jpg'.format(icam, glob2loc(curr_frame, icam))))  # TODO
+                #curr_image = plt.imread(pjoin(args.basedir, 'frames/camera{}/{}.jpg'.format(icam, lib.glob2loc(curr_frame, icam))))  # TODO
                 curr_image = images[icam-1]
                 plt.imshow(curr_image)
 

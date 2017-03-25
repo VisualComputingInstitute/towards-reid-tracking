@@ -10,6 +10,8 @@ from filterpy.stats import plot_covariance_ellipse
 import matplotlib.pyplot as plt
 from os.path import join as pjoin
 
+import lib
+
 # all_bs for bbox regression
 all_bs = np.array([[255.9004, -0.0205, 138.4768, 0.1939],
                    [213.1062, 0.0039, 124.5369, 0.2044],
@@ -19,31 +21,6 @@ all_bs = np.array([[255.9004, -0.0205, 138.4768, 0.1939],
                    [147.8093, 0.0344, -275.1930, 0.7032],
                    [209.2198, 0.0354, -296.9731, 0.7247],
                    [175.5730, 0.0077, 76.2798, 0.1737]])
-
-
-def stick_to_bounds(box, bounds=(0,0,1,1)):
-    # bo is l t w h
-    l, t, w, h = box
-    bl, bt, bw, bh = bounds
-
-    l += max(bl - l, 0)
-    l -= max((l+w) - (bl+bw), 0)
-
-    t += max(bt - t, 0)
-    t -= max((t+h) - (bt+bh), 0)
-
-    return l, t, w, h
-
-
-def box_centered(cx, cy, h, w, bounds=(0, 0, 1, 1)):
-    # box is l t w h
-    return stick_to_bounds((cx - w / 2, cy - h / 2, w, h), bounds)
-
-
-def cutout(img, box):
-    # box is l, t, w, h
-    l, t, w, h = map(int, box)
-    return img[t:t+h,l:l+w]
 
 
 def embed_crop(crop, fake_id):
@@ -112,10 +89,10 @@ class Track(object):
         return scipy.misc.imresize(heatmap, self.state_shape, interp='bicubic', mode='F')
 
     def get_crop_at_pos(self,pos,image):
-        #fix bb: 128x48
-        x,y = pos
-        box_c = box_centered(x,y,128*2,48*2,bounds=(0,0,image.shape[0],image.shape[1]))
-        crop = cutout(image,box_c)
+        # TODO: fix bb: 128x48
+        x, y = pos
+        box_c = lib.box_centered(x, y, 128*2, 48*2, bounds=(0,0,image.shape[0],image.shape[1]))
+        crop = lib.cutout_abs_hwc(image, box_c)
         return crop
 
     def get_peak_in_heatmap(self,heatmap):
