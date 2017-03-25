@@ -123,7 +123,7 @@ track_id = 1
 dt = 1./SEQ_FPS
 
 track_lists = [[], [], [], [], [], [], [], []]
-already_tracked_ids = []
+already_tracked_ids = [[], [], [], [], [], [], [], []]
 
 dist_thresh = 100 #pixel #TODO: dependent on resolution
 heatmap_scale = 20
@@ -164,9 +164,8 @@ for curr_frame in range(49700, 227540+1):
     ### B) get new tracks from general heatmap
     for icam in range(1, 8 + 1):
         # TODO: ID management (duke)
-        # TODO: already_tracked_ids needs to be per-cam too.
         curr_cam_dets = slice_all(curr_dets, curr_dets['Cams'] == icam)
-        new_det_indices = np.where(np.logical_not(np.in1d(curr_cam_dets['TIDs'], already_tracked_ids)))[0]
+        new_det_indices = np.where(np.logical_not(np.in1d(curr_cam_dets['TIDs'], already_tracked_ids[icam-1])))[0]
         for each_det_idx in new_det_indices:
             new_heatmap = np.random.rand(int(SEQ_SHAPE[0] / heatmap_scale), int(SEQ_SHAPE[1] / heatmap_scale))
             new_heatmap = heatmap_sampling_for_dets(new_heatmap, heatmap_scale, SEQ_SHAPE, [curr_cam_dets['boxes'][each_det_idx]])
@@ -180,7 +179,7 @@ for curr_frame in range(49700, 227540+1):
             # TODO: get id_heatmap of that guy for init_heatmap
             new_track = Track(init_x, init_P, dt, curr_frame, start_pose, new_heatmap, track_id=new_id)
             track_lists[icam-1].append(new_track)
-            already_tracked_ids.append(new_id)
+            already_tracked_ids[icam-1].append(new_id)
 
 
     ### C) further track-management
