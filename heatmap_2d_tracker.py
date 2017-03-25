@@ -134,6 +134,8 @@ def main():
     for curr_frame in range(49700, 227540+1):
         print("\rFrame {}, {} tracks".format(curr_frame, list(map(len, track_lists))), end='', flush=True)
 
+        images = [plt.imread(pjoin(args.basedir, 'frames/camera{}/{}.jpg'.format(icam, glob2loc(curr_frame, icam)))) for icam in range(1,8+1)]
+
         curr_dets = slice_all(dets, dets['GFIDs'] == curr_frame)
         num_curr_dets = len(curr_dets)
 
@@ -148,11 +150,7 @@ def main():
                 # ---PREDICT---
                 each_tracker.track_predict()
                 # ---UPDATE---
-                each_tracker.track_update(id_heatmap)
-                if each_tracker.pos_heatmap.max() > 2.0:
-                    each_tracker.track_is_matched(curr_frame)
-                else:
-                    each_tracker.track_is_missed(curr_frame)
+                each_tracker.track_update(id_heatmap, curr_frame, images[icam-1])
 
 
 
@@ -169,7 +167,7 @@ def main():
                 new_id = curr_cam_dets['TIDs'][each_det_idx]
                 # TODO: get correct track_id (loop heatmap, instead of function call?# )
                 # TODO: get id_heatmap of that guy for init_heatmap
-                new_track = Track(dt, curr_frame, new_heatmap, track_id=new_id,
+                new_track = Track(dt, curr_frame, new_heatmap, images[icam-1], track_id=new_id,
                                   state_shape=STATE_SHAPE, output_shape=SEQ_SHAPE)
                 track_lists[icam-1].append(new_track)
                 already_tracked_ids[icam-1].append(new_id)
@@ -183,7 +181,8 @@ def main():
         if args.vis:
             for icam, track_list in zip(range(1, 8 + 1), track_lists):
                 # open image file
-                curr_image = plt.imread(pjoin(args.basedir, 'frames/camera{}/{}.jpg'.format(icam, glob2loc(curr_frame, icam))))  # TODO
+                #curr_image = plt.imread(pjoin(args.basedir, 'frames/camera{}/{}.jpg'.format(icam, glob2loc(curr_frame, icam))))  # TODO
+                curr_image = images[icam-1]
                 plt.imshow(curr_image)
 
                 # plot (active) tracks

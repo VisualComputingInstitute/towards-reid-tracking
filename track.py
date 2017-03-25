@@ -8,6 +8,47 @@ from scipy.linalg import block_diag,inv
 from filterpy.common import Q_discrete_white_noise
 from filterpy.stats import plot_covariance_ellipse
 import matplotlib.pyplot as plt
+from os.path import join as pjoin
+
+# all_bs for bbox regression
+all_bs = np.array([[255.9004, -0.0205, 138.4768, 0.1939],
+                   [213.1062, 0.0039, 124.5369, 0.2044],
+                   [279.7756, -0.0181, 12.4071, 0.4278],
+                   [-384.7724, 0.3990, 54.3856, 0.3107],
+                   [259.4900, -0.0271, 146.8988, 0.1994],
+                   [147.8093, 0.0344, -275.1930, 0.7032],
+                   [209.2198, 0.0354, -296.9731, 0.7247],
+                   [175.5730, 0.0077, 76.2798, 0.1737]])
+
+
+def stick_to_bounds(box, bounds=(0,0,1,1)):
+    # bo is l t w h
+    l, t, w, h = box
+    bl, bt, bw, bh = bounds
+
+    l += max(bl - l, 0)
+    l -= max((l+w) - (bl+bw), 0)
+
+    t += max(bt - t, 0)
+    t -= max((t+h) - (bt+bh), 0)
+
+    return l, t, w, h
+
+
+def box_centered(cx, cy, h, w, bounds=(0, 0, 1, 1)):
+    # box is l t w h
+    return stick_to_bounds((cx - w / 2, cy - h / 2, w, h), bounds)
+
+
+def cutout(img, box):
+    # box is l, t, w, h
+    l, t, w, h = box
+    return img[t:t+h,l:l+w]
+
+
+def embed_crop(crop, fake_id):
+    return fake_id
+
 
 class Track(object):
 
@@ -20,7 +61,7 @@ class Track(object):
 
     """
 
-    def __init__(self, dt, curr_frame, init_heatmap,
+    def __init__(self, dt, curr_frame, init_heatmap, image,
                  state_shape, output_shape, track_dim=2, det_dim=2, track_id=-1):
         init_x = [0.0, 0.0]
         init_P = [[10.0, 0], [0, 10.0]]
@@ -62,13 +103,36 @@ class Track(object):
 
         self.poses=[self.get_peak_in_heatmap(self.pos_heatmap)]
 
+        self.embedding = None
+        crop = self.get_crop_at_pos(self.poses[0],image)
+        self.update_embedding(embed_crop(crop, fake_id=track_id))  # TODO: Make real
+
     # ==Heatmap stuff==
     def resize_to_state(self, heatmap):
         return scipy.misc.imresize(heatmap, self.state_shape, interp='bicubic', mode='F')
 
+    def get_crop_at_pos(self,pos,image):
+        #fix bb: 128x48
+        x,y = pos
+        box_c = box_centered(x,y,128*2,48*2,bounds=(0,0,image.shape[0],image.shape[1]))
+        crop = cutout(image,box_c)
+        return crop
+
     def get_peak_in_heatmap(self,heatmap):
         idx = np.unravel_index(heatmap.argmax(), heatmap.shape)
         return [idx[1],idx[0]]
+
+    def get_regressed_bbox_hw(self,pos):
+        return[w,h]
+
+    def update_embedding(self, new_embedding):
+        if self.embedding is None:
+            self.embedding = new_embedding
+            self.n_embs_seen = 1
+        else:
+            self.embedding = self.embedding*self.n_embs_seen + new_embedding
+            self.n_embs_seen += 1
+            self.embedding /= self.n_embs_seen
 
     # ==Track state==
     def state_to_output(self, x, y):
@@ -94,7 +158,7 @@ class Track(object):
         self.pos_heatmap = scipy.ndimage.shift(self.pos_heatmap,self.KF.x) #TODO noise of v_cov
         self.pos_heatmap = scipy.ndimage.filters.gaussian_filter(self.pos_heatmap, (self.KF.P[0,0],self.KF.P[0,0]))  # TODO: non-diag cov
 
-    def track_update(self, id_heatmap):
+    def track_update(self, id_heatmap, curr_frame, image):
         id_heatmap = self.resize_to_state(id_heatmap)
 
         # heatmap
@@ -103,6 +167,14 @@ class Track(object):
         # standard KF
         vel_measurement = self.get_velocity_estimate(self.old_heatmap, self.pos_heatmap)
         self.KF.update(vel_measurement)
+
+        if self.pos_heatmap.max() > 2.0: # TODO: magic threshold
+            self.track_is_matched(curr_frame)
+            # update embedding
+            crop = self.get_crop_at_pos(self.poses[0], image)
+            self.update_embedding(embed_crop(crop, fake_id=self.track_id))  # TODO: Make real
+        else:
+            self.track_is_missed(curr_frame)
 
 
     # ==Track status management==
@@ -145,12 +217,10 @@ class Track(object):
         #plot_covariance_ellipse((self.KF.x[0], self.KF.x[2]), self.KF.P, fc=self.color, alpha=0.4, std=[1,2,3])
         #print(self.poses)
         plt.plot(*self.state_to_output(*self.poses[-1]), color=self.color, marker='o')
+        plt.text(*self.state_to_output(*self.poses[-1]),s='{}'.format(self.embedding))
         if plot_past_trajectory and len(self.poses)>1:
             outputs_xy = self.states_to_outputs(np.array(self.poses))
             plt.plot(*outputs_xy.T, linewidth=2.0, color=self.color)
         if plot_heatmap:
             plt.imshow(self.pos_heatmap, alpha=0.5, interpolation='none', cmap='hot',
                        extent=[0, self.output_shape[1], self.output_shape[0], 0], clim=(0, 10))
-
-#test = scipy.misc.imresize(image,(1920,1080),interp='bicubic',mode='F')
-#fix bb: 128x48
