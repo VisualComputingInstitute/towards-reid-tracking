@@ -9,6 +9,8 @@ from scipy.io import loadmat
 
 from scipy.stats import multivariate_normal
 from scipy import signal
+import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
 
 try:
     from functools import lru_cache  # Needs at least Python 3.2
@@ -334,3 +336,12 @@ def load_dat(basename):
     Xm = np.memmap(basename, mode='r', dtype=dtype, shape=shape)
     Xa = np.ndarray.__new__(np.ndarray, dtype=dtype, shape=shape, buffer=Xm)
     return Xa
+
+###############################################################################
+# Plotting
+def get_transparent_colormap():
+    cmap = plt.cm.inferno
+    out_cmap = cmap(np.arange(cmap.N))
+    out_cmap[:, -1] = np.linspace(0, 1, cmap.N)
+    out_cmap = ListedColormap(out_cmap)
+    return out_cmap
