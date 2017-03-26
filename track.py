@@ -222,6 +222,9 @@ class Track(object):
         if output_shape is None:
             output_shape = self.output_shape
 
+        if self.status == 'deleted':
+            return
+
         #plot_covariance_ellipse((self.KF.x[0], self.KF.x[2]), self.KF.P, fc=self.color, alpha=0.4, std=[1,2,3])
         #print(self.poses)
         plt.plot(*self.state_to_output(*self.poses[-1], output_shape=output_shape), color=self.color, marker='o')
