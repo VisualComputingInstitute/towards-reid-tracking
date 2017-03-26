@@ -21,6 +21,7 @@ import matplotlib.patches as patches
 import lib
 from track import Track
 from fakenews import FakeNeuralNewsNetwork
+from neural import SemiFakeNews
 
 
 SEQ_FPS = 60.0
