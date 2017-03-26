@@ -4,6 +4,7 @@ import numpy as np
 from filterpy.kalman import KalmanFilter
 import scipy
 from scipy import ndimage
+from scipy import signal
 from scipy.linalg import block_diag,inv
 from filterpy.common import Q_discrete_white_noise
 from filterpy.stats import plot_covariance_ellipse
@@ -147,8 +148,8 @@ class Track(object):
         self.KF.predict()
         # heatmap
         self.old_heatmap = self.pos_heatmap
-        self.pos_heatmap = scipy.ndimage.shift(self.pos_heatmap,self.KF.x) #TODO noise of v_cov
-        self.pos_heatmap = scipy.ndimage.filters.gaussian_filter(self.pos_heatmap, (self.KF.P[0,0],self.KF.P[0,0]))  # TODO: non-diag cov
+        self.pos_heatmap = scipy.ndimage.shift(self.pos_heatmap,self.KF.x)
+        self.pos_heatmap = lib.convolve_edge_same(self.pos_heatmap, lib.gauss2d(self.KF.P))
 
     def track_update(self, id_heatmap, curr_frame, image):
         id_heatmap = self.resize_to_state(id_heatmap)

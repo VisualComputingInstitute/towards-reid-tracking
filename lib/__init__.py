@@ -7,6 +7,9 @@ from os.path import join as pjoin
 import h5py
 from scipy.io import loadmat
 
+from scipy.stats import multivariate_normal
+from scipy import signal
+
 try:
     from functools import lru_cache  # Needs at least Python 3.2
 except ImportError:
@@ -51,6 +54,25 @@ def img2df(img):
     img = img.astype(np.float32) / 255.0
     return img
 
+
+def gauss2d(cov, nstd=2):
+    """
+    guaranteed to return filter of odd shape which also keeps probabilities as probabilities.
+    """
+    sx, sy = np.sqrt(cov[0,0]), np.sqrt(cov[1,1])
+    x, y = np.mgrid[-int(nstd*sy):int(nstd*sy)+1:1, -int(nstd*sx):int(nstd*sx)+1:1]
+    pos = np.dstack((y, x))
+    rv = multivariate_normal([0, 0], cov)
+    filter = rv.pdf(pos)
+    return filter / np.sum(filter)  # Make sure it's a probability-preserving
+
+
+def convolve_edge_same(image, filter):
+    pad_width = int(filter.shape[1] / 2)
+    pad_height = int(filter.shape[0] / 2)
+    out_img = np.pad(image, ((pad_height, pad_height), (pad_width, pad_width)), mode='edge')
+    out_img = signal.convolve2d(out_img, filter, mode='valid', boundary='fill', fillvalue=0)
+    return out_img
 
 ###############################################################################
 # Video handling, only with OpenCV
