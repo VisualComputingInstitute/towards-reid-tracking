@@ -85,7 +85,7 @@ def main(net):
                 for icam, track_list in zip(range(1, 8 + 1), track_lists):
                     for each_tracker in track_list:
                         track_eval_line = each_tracker.get_track_eval_line(cid=icam,frame=curr_frame)
-                        eval_file.write('{} {} {} {} {} {} {} {} {}'.format(*track_eval_line))
+                        eval_file.write('{} {} {} {} {} {} {} {} {}\n'.format(*track_eval_line))
 
         # ===visualization===
         if args.vis:
