@@ -196,10 +196,10 @@ class Track(object):
         #TODO
         #dukeMTMC format
         #[cam, ID, frame, left, top, width, height, worldX, worldY]
-        curr_pose = self.state_to_output(self.poses[-1])
+        curr_pose = self.state_to_output(*self.poses[-1])
         cX = curr_pose[0]
         cY = curr_pose[1]
-        h = int(((all_bs[cid][0]+all_bs[cid][1]*cX) + (all_bs[cid][2]+all_bs[cid][3]*cY))/2)
+        h = int(((all_bs[cid-1][0]+all_bs[cid-1][1]*cX) + (all_bs[cid-1][2]+all_bs[cid-1][3]*cY))/2)
         w = int(0.4*h)
         l = int(cX-w/2)
         t = int(cY-h/2)

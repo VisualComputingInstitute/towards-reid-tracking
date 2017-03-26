@@ -34,6 +34,7 @@ g_frames = 0  # Global counter for correct FPS in all cases
 
 #@profile
 def main(net):
+    eval_path = pjoin(args.outdir, 'results/run_{:%Y-%m-%d_%H:%M:%S}.txt'.format(datetime.datetime.now()))
     track_lists = [[], [], [], [], [], [], [], []]
 
     # ===Tracking fun begins: iterate over frames===
@@ -42,7 +43,7 @@ def main(net):
         print("\rFrame {}, {} tracks".format(curr_frame, list(map(len, track_lists))), end='', flush=True)
         net.tick(curr_frame)
 
-        images = [plt.imread(pjoin(args.basedir, 'frames/camera{}/{}.jpg'.format(icam, lib.glob2loc(curr_frame, icam)))) for icam in range(1,8+1)]
+        images = [plt.imread(pjoin(args.basedir, 'frames/camera{}/{}.jpg'.format(1, lib.glob2loc(curr_frame, icam)))) for icam in range(1,8+1)]
 
         image_embeddings = list(map(net.embed_image, images))
 
@@ -81,7 +82,7 @@ def main(net):
 
         # ==evaluation===
         if (True):
-            with open(pjoin(args.basedir, 'results/run_{:%Y-%m-%d_%H:%M:%S}.txt'.format(datetime.datetime.now()), 'a')) as eval_file:
+            with open(eval_path, 'a') as eval_file:
                 for icam, track_list in zip(range(1, 8 + 1), track_lists):
                     for each_tracker in track_list:
                         track_eval_line = each_tracker.get_track_eval_line(cid=icam,frame=curr_frame)
@@ -151,6 +152,7 @@ if __name__ == '__main__':
     # Prepare output dirs
     for icam in range(1, 8+1):
         makedirs(pjoin(args.outdir, 'camera{}'.format(icam)), exist_ok=True)
+    makedirs(pjoin(args.outdir, 'results'), exist_ok=True)
 
     tstart = time.time()
     try:
