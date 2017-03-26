@@ -185,7 +185,7 @@ if __name__ == '__main__':
                         help='Path to `train` folder of 2DMOT2015.')
     parser.add_argument('--outdir', nargs='?', default='/home/breuers/results/duke_mtmc/',
                         help='Where to store generated output. Only needed if `--vis` is also passed.')
-    parser.add_argument('--vis', action='store_true', default=True,
+    parser.add_argument('--vis', action='store_true',
                         help='Generate and save visualization of the results.')
     args = parser.parse_args()
     print(args)
