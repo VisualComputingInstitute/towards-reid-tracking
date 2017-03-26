@@ -21,6 +21,16 @@ TRAIN_START, TRAIN_END = 49700, 227540
 # Generic utilities
 
 
+def softmax(x):
+    x = x - np.max(x)
+    eh = np.exp(x)
+    return eh / np.sum(eh)
+
+
+def softmin(x):
+    return softmax(-x)
+
+
 def my_choice(candidates, n):
     return np.random.choice(candidates, n, len(candidates) < n)
 
@@ -49,13 +59,16 @@ try:
     import cv2
 
 
-    def cv2df(img, shape):
+    def cv2df(img, shape, is_bgr=True):
         """
         Convert images as returned by cv2.imread into what's needed by DeepFried.
         This means: BGR->RGB, HWC->CHW and [0,255]->[0.0,1.0]
+
+        Note that `shape` is (H,W), conversion to (W,H) for OpenCV is done internally.
         """
-        img = cv2.resize(img, shape, interpolation=cv2.INTER_AREA)
-        img = img[:,:,::-1]  # BGR to RGB
+        img = cv2.resize(img, (shape[1], shape[0]), interpolation=cv2.INTER_AREA)
+        if is_bgr:
+            img = img[:,:,::-1]  # BGR to RGB
         return img2df(img)
 
 

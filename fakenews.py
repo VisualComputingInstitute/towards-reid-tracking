@@ -57,4 +57,4 @@ class FakeNeuralNewsNetwork:
             add_idx = np.random.multivariate_normal([l+w/2, t+h/2], [[(w/6)**2, 0], [0, (h/6)**2]], int(np.prod(heatmap.shape)*h*w*score))
             np.add.at(heatmap, [[int(np.clip(y, 0, 0.999)*H) for x,y in add_idx],
                                 [int(np.clip(x, 0, 0.999)*W) for x,y in add_idx]], 1)
-        return heatmap
+        return lib.softmax(heatmap)

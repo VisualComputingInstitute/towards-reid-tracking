@@ -35,8 +35,10 @@ class Track(object):
     """
 
     def __init__(self, embed_crop_fn, dt, curr_frame, init_heatmap, image,
-                 state_shape, output_shape, track_dim=2, det_dim=2, track_id=-1):
+                 state_shape, output_shape, track_dim=2, det_dim=2, track_id=-1,
+                 person_matching_threshold=0.5):
         self.embed_crop_fn = embed_crop_fn
+        self.person_matching_threshold = 0.5
 
         init_x = [0.0, 0.0]
         init_P = [[10.0, 0], [0, 10.0]]
@@ -79,8 +81,8 @@ class Track(object):
         self.poses=[self.get_peak_in_heatmap(self.pos_heatmap)]
 
         self.embedding = None
-        crop = self.get_crop_at_pos(self.poses[0],image)
-        self.update_embedding(self.embed_crop_fn(crop, fake_id=track_id))  # TODO: Make real
+        # TODO: Make TID real
+        self.update_embedding(self.embed_crop_fn(self.get_crop_at_current_pos(image), fake_id=track_id))
 
     # ==Heatmap stuff==
     def resize_to_state(self, heatmap):
@@ -92,6 +94,12 @@ class Track(object):
         box_c = lib.box_centered(x, y, 128*2, 48*2, bounds=(0,0,image.shape[1],image.shape[0]))
         crop = lib.cutout_abs_hwc(image, box_c)
         return crop
+
+    def get_crop_at_current_pos(self, image):
+        return self.get_crop_at_pos(
+            self.state_to_output(*self.poses[-1], output_shape=(image.shape[0], image.shape[1])),
+            image
+        )
 
     def get_peak_in_heatmap(self,heatmap):
         idx = np.unravel_index(heatmap.argmax(), heatmap.shape)
@@ -152,11 +160,15 @@ class Track(object):
         vel_measurement = self.get_velocity_estimate(self.old_heatmap, self.pos_heatmap)
         self.KF.update(vel_measurement)
 
-        if self.pos_heatmap.max() > 2.0: # TODO: magic threshold
+
+        uniform = 1/np.prod(self.state_shape)
+        T = uniform + self.person_matching_threshold*(1.0 - uniform)
+        if T < self.pos_heatmap.max():
             self.track_is_matched(curr_frame)
-            # update embedding
-            pos_image_space = self.state_to_output(*self.poses[-1], output_shape=(image.shape[0], image.shape[1]))
-            crop = self.get_crop_at_pos(pos_image_space, image)
+
+            # update embedding. Needs to happen after the above, as that updates current_pos.
+            crop = self.get_crop_at_current_pos(image)
+            #cv2.imwrite('/tmp/tracker-crop-{}-{}.jpg'.format(self.track_id, curr_frame), crop[:,:,::-1])
             self.update_embedding(self.embed_crop_fn(crop, fake_id=self.track_id))  # TODO: Make real
         else:
             self.track_is_missed(curr_frame)
@@ -213,10 +225,11 @@ class Track(object):
         #plot_covariance_ellipse((self.KF.x[0], self.KF.x[2]), self.KF.P, fc=self.color, alpha=0.4, std=[1,2,3])
         #print(self.poses)
         plt.plot(*self.state_to_output(*self.poses[-1], output_shape=output_shape), color=self.color, marker='o')
-        plt.text(*self.state_to_output(*self.poses[-1], output_shape=output_shape), s='{}'.format(self.embedding))
+        #plt.text(*self.state_to_output(*self.poses[-1], output_shape=output_shape), s='{}'.format(self.embedding))
         if plot_past_trajectory and len(self.poses)>1:
             outputs_xy = self.states_to_outputs(np.array(self.poses), output_shape)
             plt.plot(*outputs_xy.T, linewidth=2.0, color=self.color)
         if plot_heatmap:
             plt.imshow(self.pos_heatmap, alpha=0.5, interpolation='none', cmap='hot',
-                       extent=[0, output_shape[1], output_shape[0], 0], clim=(0, 10))
+                       #extent=[0, output_shape[1], output_shape[0], 0], clim=(0, 10))
+                       extent=[0, output_shape[1], output_shape[0], 0], clim=(0, 1))

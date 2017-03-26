@@ -5,10 +5,13 @@ import DeepFried2 as df
 
 import lib
 from lib.models import add_defaults
+from fakenews import FakeNeuralNewsNetwork
 
 
-class RealNews:
-    def __init__(self, model, weights, scale_factor=2):
+class SemiFakeNews(FakeNeuralNewsNetwork):
+    def __init__(self, model, weights, scale_factor, fake_dets):
+        FakeNeuralNewsNetwork.__init__(self, fake_dets)
+
         self.scale_factor = scale_factor
 
         self.net = add_defaults(import_module('lib.models.' + model).mknet())
@@ -20,21 +23,26 @@ class RealNews:
         print("Done", flush=True)
 
 
-    def tick(self, curr_frame):
-        pass  # Not needed for real network.
+    # Only for the parent fake one.
+    #def tick(self, curr_frame):
+    #    pass  # Not needed for real network.
 
 
-    def fake_camera(self, *fakea, **fakekw):
-        pass  # Note needed for real network.
+    # Only for the parent fake one.
+    #def fake_camera(self, *fakea, **fakekw):
+    #    pass  # Note needed for real network.
 
 
     def embed_crop(self, crop, *fakea, **fakekw):
-        return self.net.forward(lib.img2df(crop)[None])[0,:,0,0]
+        X = lib.cv2df(crop, shape=self.net.in_shape, is_bgr=False)
+        return self.net.forward(X[None])[0,:,0,0]
 
 
     def embed_image(self, image):
         # TODO: resize? multi-scale?
-        return self.net.forward(lib.img2df(image)[None])[0]
+        H, W, _ = image.shape
+        X = lib.cv2df(image, shape=(int(H*self.scale_factor), int(W*self.scale_factor)), is_bgr=False)
+        return self.net.forward(X[None])[0]
 
 
     def search_person(self, img_embs, person_emb, *fakea, **fakekw):
@@ -43,9 +51,11 @@ class RealNews:
 
         # Convert distance to probability.
         # TODO: Might be better to fit a sigmoid or something.
-        return 1/(1+d)
+        return lib.softmin(d)
+        #return 1/(0.01+d)
 
 
-    def personness(self, image, known_embs):
-        # TODO: Teh big Q
-        pass
+    # Inherited from the parent fake one
+    #def personness(self, image, known_embs):
+    #    # TODO: Teh big Q
+    #    pass
