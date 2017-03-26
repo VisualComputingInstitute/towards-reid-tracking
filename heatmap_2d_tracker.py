@@ -43,7 +43,7 @@ def main(net):
         print("\rFrame {}, {} tracks".format(curr_frame, list(map(len, track_lists))), end='', flush=True)
         net.tick(curr_frame)
 
-        images = [plt.imread(pjoin(args.basedir, 'frames/camera{}/{}.jpg'.format(1, lib.glob2loc(curr_frame, icam)))) for icam in range(1,8+1)]
+        images = [plt.imread(pjoin(args.basedir, 'frames/camera{}/{}.jpg'.format(icam, lib.glob2loc(curr_frame, icam)))) for icam in range(1,8+1)]
 
         image_embeddings = list(map(net.embed_image, images))
 
