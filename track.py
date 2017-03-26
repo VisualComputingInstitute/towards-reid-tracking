@@ -89,7 +89,7 @@ class Track(object):
     def get_crop_at_pos(self,pos,image):
         # TODO: fix bb: 128x48
         x, y = pos
-        box_c = lib.box_centered(x, y, 128*2, 48*2, bounds=(0,0,image.shape[0],image.shape[1]))
+        box_c = lib.box_centered(x, y, 128*2, 48*2, bounds=(0,0,image.shape[1],image.shape[0]))
         crop = lib.cutout_abs_hwc(image, box_c)
         return crop
 
@@ -111,6 +111,9 @@ class Track(object):
 
     # ==Track state==
     def state_to_output(self, x, y, output_shape=None):
+        """
+        The optional `output_shape` is in (H,W) format.
+        """
         if output_shape is None:
             output_shape = self.output_shape
 
@@ -152,7 +155,8 @@ class Track(object):
         if self.pos_heatmap.max() > 2.0: # TODO: magic threshold
             self.track_is_matched(curr_frame)
             # update embedding
-            crop = self.get_crop_at_pos(self.poses[0], image)
+            pos_image_space = self.state_to_output(*self.poses[-1], output_shape=(image.shape[0], image.shape[1]))
+            crop = self.get_crop_at_pos(pos_image_space, image)
             self.update_embedding(self.embed_crop_fn(crop, fake_id=self.track_id))  # TODO: Make real
         else:
             self.track_is_missed(curr_frame)
