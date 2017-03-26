@@ -7,7 +7,7 @@ from __future__ import division
 import argparse
 from os.path import join as pjoin
 from os import makedirs
-import time
+import time, datetime
 
 # the usual suspects
 import numpy as np
@@ -78,6 +78,14 @@ def main(net):
         ### C) further track-management
         # delete tracks marked as 'deleted' in this tracking cycle #TODO: manage in other list for re-id
         #track_list = [i for i in track_list if i.status != 'deleted']
+
+        # ==evaluation===
+        if (True):
+            with open(pjoin(args.basedir, 'results/run_{:%Y-%m-%d_%H:%M:%S}.txt'.format(datetime.datetime.now()), 'a')) as eval_file:
+                for icam, track_list in zip(range(1, 8 + 1), track_lists):
+                    for each_tracker in track_list:
+                        track_eval_line = each_tracker.get_track_eval_line(cid=icam,frame=curr_frame)
+                        eval_file.write('{} {} {} {} {} {} {} {} {}'.format(*track_eval_line))
 
         # ===visualization===
         if args.vis:

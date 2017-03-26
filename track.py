@@ -184,14 +184,22 @@ class Track(object):
         self.status = 'deleted'
 
     # ==Evaluation==
-    def get_track_state_dict(self):
+    def get_track_eval_line(self,cid=1,frame=0):
         #pymot format
-        # TODO: don't forget to scale up from state shape to output shape.
-        return {"height": 0, "width": 0, "id": self.track_id, "y": self.KF.x[2], "x": self.KF.x[0], "z": 0}
+        #[height,width,id,y,x,z]
+        #return {"height": 0, "width": 0, "id": self.track_id, "y": self.KF.x[2], "x": self.KF.x[0], "z": 0}
         #motchallenge format
         #TODO
         #dukeMTMC format
-        #TODO
+        #[cam, ID, frame, left, top, width, height, worldX, worldY]
+        curr_pose = self.state_to_output(self.poses[-1])
+        cX = curr_pose[0]
+        cY = curr_pose[1]
+        h = int(((all_bs[cid][0]+all_bs[cid][1]*cX) + (all_bs[cid][2]+all_bs[cid][3]*cY))/2)
+        w = int(0.4*h)
+        l = int(cX-w/2)
+        t = int(cY-h/2)
+        return [cid, self.track_id, frame, l, t, w, h, -1, -1]
 
     # ==Visualization==
     def plot_track(self, plot_past_trajectory=False, plot_heatmap=False, output_shape=None):
