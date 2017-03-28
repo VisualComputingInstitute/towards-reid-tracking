@@ -34,13 +34,13 @@ g_frames = 0  # Global counter for correct FPS in all cases
 
 
 #@profile
-def main(net):
+def main(net, t0, t1):
     eval_path = pjoin(args.outdir, 'results/run_{:%Y-%m-%d_%H:%M:%S}.txt'.format(datetime.datetime.now()))
     track_lists = [[], [], [], [], [], [], [], []]
 
     # ===Tracking fun begins: iterate over frames===
     # TODO: global time (duke)
-    for curr_frame in range(49700, 227540+1):
+    for curr_frame in range(t0, t1+1):
         print("\rFrame {}, {} tracks".format(curr_frame, list(map(len, track_lists))), end='', flush=True)
         net.tick(curr_frame)
 
@@ -144,8 +144,12 @@ if __name__ == '__main__':
                         help='Where to store generated output. Only needed if `--vis` is also passed.')
     parser.add_argument('--model', default='lunet2',
                         help='Name of the model to load. Corresponds to module names in lib/models. Or `fake`')
-    parser.add_argument('--weights',
+    parser.add_argument('--weights', default='/work/breuers/dukeMTMC/models/lunet2-final.pkl',
                         help='Name of the weights to load for the model (path to .pkl file).')
+    parser.add_argument('--t0', default=49700,
+                        help='Time of first frame.')
+    parser.add_argument('--t1', default=227540,
+                        help='Time of last frame, inclusive.')
     parser.add_argument('--vis', action='store_true',
                         help='Generate and save visualization of the results.')
     args = parser.parse_args()
@@ -153,13 +157,13 @@ if __name__ == '__main__':
 
     # This is all for faking the network.
     if args.model == 'fake':
-        net = FakeNeuralNewsNetwork(lib.load_trainval(pjoin(args.basedir, 'ground_truth', 'trainval.mat')))
+        net = FakeNeuralNewsNetwork(lib.load_trainval(pjoin(args.basedir, 'ground_truth', 'trainval.mat'), time_range=[args.t0, args.t1]))
     else:
         net = SemiFakeNews(
             model=args.model,
             weights=args.weights,
             scale_factor=0.5,
-            fake_dets=lib.load_trainval(pjoin(args.basedir, 'ground_truth', 'trainval.mat'))
+            fake_dets=lib.load_trainval(pjoin(args.basedir, 'ground_truth', 'trainval.mat'), time_range=[args.t0, args.t1])
         )
 
     # Prepare output dirs
@@ -169,7 +173,7 @@ if __name__ == '__main__':
 
     tstart = time.time()
     try:
-        main(net)
+        main(net, args.t0, args.t1)
     except KeyboardInterrupt:
         print()
 
