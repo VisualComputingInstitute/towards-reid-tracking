@@ -8,44 +8,38 @@ from lib.models import add_defaults
 from fakenews import FakeNeuralNewsNetwork
 
 
-class SemiFakeNews(FakeNeuralNewsNetwork):
-    def __init__(self, model, weights, scale_factor, fake_dets):
+class RealNews:
+    def __init__(self, model, weights, scale_factor):
         self.scale_factor = scale_factor
 
-        self.net = add_defaults(import_module('lib.models.' + model).mknet())
+        mod = import_module('lib.models.' + model)
+        self.net = add_defaults(mod.add_piou(mod.mknet()))
         self.net.load(weights)
         self.net.evaluate()
 
         print("Precompiling network...", end='', flush=True)
         #self.net.forward(np.zeros((1,3) + self.net.in_shape, df.floatX))
-        out = self.net.forward(np.zeros((1,3,int(1080*scale_factor),int(1920*scale_factor)), df.floatX))
+        self.net.forward(np.zeros((1,3,int(1080*scale_factor),int(1920*scale_factor)), df.floatX))
         print("Done", flush=True)
 
-        FakeNeuralNewsNetwork.__init__(self, fake_dets, fake_shape=out.shape[2:])
+
+    def tick(self, curr_frame):
+        pass  # Not needed for real network.
 
 
-
-    # Only for the parent fake one.
-    #def tick(self, curr_frame):
-    #    pass  # Not needed for real network.
-
-
-    # Only for the parent fake one.
-    #def fake_camera(self, *fakea, **fakekw):
-    #    pass  # Note needed for real network.
+    def fake_camera(self, *fakea, **fakekw):
+        pass  # Note needed for real network.
 
 
     def embed_crop(self, crop, *fakea, **fakekw):
         assert (crop.shape[0]*self.scale_factor, crop.shape[1]*self.scale_factor) == self.net.in_shape
         X = lib.img2df(crop, shape=self.net.in_shape)
-        return self.net.forward(X[None])[0,:,0,0]
+        return self.net.embs_from_out(self.net.forward(X[None]))[0,:,0,0]
 
 
     def embed_image(self, image):
-        # TODO: resize? multi-scale?
-        H, W, _ = image.shape
-        X = lib.img2df(image, shape=(int(H*self.scale_factor), int(W*self.scale_factor)))
-        return self.net.forward(X[None])[0]
+        print("You better use `embed_and_personness_multi`, you lazy bastard")
+        return self.embed_and_personness_multi([image])[0][0]
 
 
     def search_person(self, img_embs, person_emb, *fakea, **fakekw):
@@ -85,7 +79,62 @@ class SemiFakeNews(FakeNeuralNewsNetwork):
         return out
 
 
-    # Inherited from the parent fake one
-    #def personness(self, image, known_embs):
-    #    # TODO: Teh big Q
-    #    pass
+    def personness(self, image, known_embs):
+        raise NotImplementedError("TODO. Use `embed_and_personness_multi` instead, don't be wasteful!")
+
+
+    def embed_and_personness_multi(self, images, batch=True):
+        H, W, _ = images[0].shape
+
+        if batch:
+            out = self.net.forward(np.array([lib.img2df(img, shape=(int(H*self.scale_factor), int(W*self.scale_factor))) for img in images]))
+        else:
+            out = np.array([self.net.forward(lib.img2df(img, shape=(int(H*self.scale_factor), int(W*self.scale_factor)))) for img in images])
+
+        return self.net.embs_from_out(out), self.net.ious_from_out(out)
+
+
+    def clear_known(self, image_personness, image_embs, known_embs):
+        p_iou = np.array(image_personness)
+        for emb in known_embs:
+            p_emb = self.search_person(image_embs, emb)
+            p_iou *= 1-p_emb
+        return p_iou
+
+
+class SemiFakeNews:
+    def __init__(self, model, weights, scale_factor, fake_dets):
+        self.real = RealNews(model, weights, scale_factor)
+
+        out = self.real.embed_image(np.zeros((3,1080,1920), df.floatX))
+        self.fake = FakeNeuralNewsNetwork(fake_dets, fake_shape=out.shape[2:])
+
+
+    def tick(self, *a, **kw):
+        self.real.tick(*a, **kw)
+        self.fake.tick(*a, **kw)
+
+
+    def fake_camera(self, *a, **kw):
+        self.real.fake_camera(*a, **kw)
+        self.fake.fake_camera(*a, **kw)
+
+
+    def embed_crop(self, crop, *fakea, **fakekw):
+        return self.real.embed_crop(crop)
+
+
+    def embed_image(self, image):
+        return self.real.embed_image(image)
+
+
+    def search_person(self, img_embs, person_emb, *fakea, **fakekw):
+        return self.real.search_person(img_embs, person_emb)
+
+
+    def fix_shape(self, net_output, orig_shape, out_shape, fill_value=0):
+        return self.real.fix_shape(net_output, orig_shape, out_shape)
+
+
+    def personness(self, image, known_embs):
+        return self.fake.personness(image, known_embs)

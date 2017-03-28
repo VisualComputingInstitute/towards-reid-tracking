@@ -22,7 +22,7 @@ from mpl_toolkits.axes_grid1 import ImageGrid
 import lib
 from track import Track
 from fakenews import FakeNeuralNewsNetwork
-from neural import SemiFakeNews
+from neural import SemiFakeNews, RealNews
 
 
 SEQ_FPS = 60.0
@@ -57,7 +57,8 @@ def main(net, args):
 
         images = [plt.imread(pjoin(args.basedir, 'frames/camera{}/{}.jpg'.format(icam, lib.glob2loc(curr_frame, icam)))) for icam in range(1,8+1)]
 
-        image_embeddings = list(map(net.embed_image, images))
+        #image_embeddings, image_personnesses = zip(*map(net.embed_image, images))
+        image_embeddings, image_personnesses = net.embed_and_personness_multi(images)
 
         for icam, track_list in zip(range(1, 8+1), track_lists):
             net.fake_camera(icam)
@@ -78,6 +79,8 @@ def main(net, args):
         ### B) get new tracks from general heatmap
         for icam in range(1, 8 + 1):
             net.fake_camera(icam)
+
+            personness = net.clear_known(image_personnesses[icam-1], image_embeddings[icam-1], known_embs=[])
 
             # TODO: ID management (duke)
             for new_heatmap, new_id in net.personness(images[icam-1], known_embs=None):
@@ -207,11 +210,12 @@ if __name__ == '__main__':
     if args.model == 'fake':
         net = FakeNeuralNewsNetwork(lib.load_trainval(pjoin(args.basedir, 'ground_truth', 'trainval.mat'), time_range=[args.t0, args.t1]))
     else:
-        net = SemiFakeNews(
+        net = RealNews(
+        #net = SemiFakeNews(
             model=args.model,
             weights=args.weights,
             scale_factor=0.5,
-            fake_dets=lib.load_trainval(pjoin(args.basedir, 'ground_truth', 'trainval.mat'), time_range=[args.t0, args.t1])
+            #fake_dets=lib.load_trainval(pjoin(args.basedir, 'ground_truth', 'trainval.mat'), time_range=[args.t0, args.t1])
         )
 
     # Prepare output dirs

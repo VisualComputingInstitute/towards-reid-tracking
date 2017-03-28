@@ -39,3 +39,17 @@ def mknet():
 
     print("Net has {:.2f}M params".format(df.utils.count_params(net)/1000/1000), flush=True)
     return net
+
+
+def add_piou(lunet2):
+    newnet = lunet2[:-1]
+    newnet.emb_mod = lunet2[-1]
+    newnet.iou_mod = df.StoreOut(df.Sequential(df.SpatialConvolutionCUDNN(256, 1, (1,1)), df.Sigmoid()))
+    newnet.add(df.RepeatInput(newnet.emb_mod, newnet.iou_mod))
+
+    newnet.embs_from_out = lambda out: out[0]
+    newnet.ious_from_out = lambda out: out[1]
+
+    newnet.in_shape = lunet2.in_shape
+    print("Added {:.2f}k params".format(df.utils.count_params(newnet.iou_mod)/1000), flush=True)
+    return newnet
