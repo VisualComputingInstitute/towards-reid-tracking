@@ -34,6 +34,7 @@ def mknet():
 
     net.emb_mod = net[-1]
     net.in_shape = (128, 48)
+    net.scale_factor = (2*2*2*2*2, 2*2*2*2*3)
 
     print("Net has {:.2f}M params".format(df.utils.count_params(net)/1000/1000), flush=True)
     return net

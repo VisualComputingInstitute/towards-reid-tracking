@@ -63,6 +63,7 @@ def main(net, args):
                 # get ID_heatmap
                 id_heatmap = net.search_person(image_embeddings[icam-1], each_tracker.embedding,
                                                fake_track_id=each_tracker.track_id)
+                id_heatmap = net.fix_shape(id_heatmap, images[icam-1].shape, STATE_SHAPE, fill_value=0)
                 # ---PREDICT---
                 each_tracker.track_predict()
                 # ---UPDATE---
@@ -78,6 +79,7 @@ def main(net, args):
             for new_heatmap, new_id in net.personness(images[icam-1], known_embs=None):
                 # TODO: get correct track_id (loop heatmap, instead of function call?# )
                 # TODO: get id_heatmap of that guy for init_heatmap
+                new_heatmap = net.fix_shape(new_heatmap, images[icam-1].shape, STATE_SHAPE, fill_value=0)
                 new_track = Track(net.embed_crop, SEQ_DT,
                                   curr_frame, new_heatmap, images[icam-1], track_id=new_id,
                                   state_shape=STATE_SHAPE, output_shape=SEQ_SHAPE,

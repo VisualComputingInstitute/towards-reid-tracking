@@ -2,13 +2,11 @@ import numpy as np
 import lib
 
 
-FAKE_HEATMAP_SHAPE = (36, 64)
-
-
 class FakeNeuralNewsNetwork:
-    def __init__(self, dets):
+    def __init__(self, dets, fake_shape=(36, 64)):
         self.already_tracked_ids = [[], [], [], [], [], [], [], []]
         self.dets = dets
+        self.fakeshape = fake_shape
 
 
     def tick(self, curr_frame):
@@ -29,7 +27,7 @@ class FakeNeuralNewsNetwork:
 
 
     def search_person(self, img_embs, person_emb, fake_track_id):
-        id_heatmap = np.random.rand(*FAKE_HEATMAP_SHAPE)
+        id_heatmap = np.random.rand(*self.fakeshape)
         id_det_boxes = self.curr_cam_dets['boxes'][self.curr_cam_dets['TIDs'] == fake_track_id]
         return self._heatmap_sampling_for_dets(id_heatmap, id_det_boxes)
 
@@ -39,7 +37,7 @@ class FakeNeuralNewsNetwork:
         new_det_indices = np.where(np.logical_not(np.in1d(self.curr_cam_dets['TIDs'], already_tracked_ids)))[0]
         new_heatmaps_and_ids = []
         for each_det_idx in new_det_indices:
-            new_heatmap = np.random.rand(*FAKE_HEATMAP_SHAPE)
+            new_heatmap = np.random.rand(*self.fakeshape)
             new_heatmap = self._heatmap_sampling_for_dets(new_heatmap, [self.curr_cam_dets['boxes'][each_det_idx]])
             new_id = self.curr_cam_dets['TIDs'][each_det_idx]
             # TODO: get correct track_id (loop heatmap, instead of function call?# )
@@ -58,3 +56,7 @@ class FakeNeuralNewsNetwork:
             np.add.at(heatmap, [[int(np.clip(y, 0, 0.999)*H) for x,y in add_idx],
                                 [int(np.clip(x, 0, 0.999)*W) for x,y in add_idx]], 1)
         return lib.softmax(heatmap)
+
+
+    def fix_shape(self, net_output, orig_shape, out_shape, fill_value=0):
+        return lib.resize_map(net_output, out_shape, interp='bicubic')

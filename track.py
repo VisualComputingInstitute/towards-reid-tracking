@@ -93,7 +93,9 @@ class Track(object):
 
     # ==Heatmap stuff==
     def resize_map_to_state(self, heatmap):
-        return lib.resize_map(heatmap, self.state_shape, interp='bicubic')
+        assert heatmap.shape == self.state_shape, "Lying Lucas giving me a heatmap that's not state-shaped!"
+        return np.array(heatmap)
+        #return lib.resize_map(heatmap, self.state_shape, interp='bicubic')
 
     def get_crop_at_pos(self,pos,image):
         # TODO: fix bb: 128x48
