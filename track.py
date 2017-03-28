@@ -76,8 +76,8 @@ class Track(object):
         self.state_shape = state_shape
         self.output_shape = output_shape
 
-        self.pos_heatmap = self.resize_to_state(init_heatmap)
-        self.old_heatmap = self.resize_to_state(init_heatmap)
+        self.pos_heatmap = self.resize_map_to_state(init_heatmap)
+        self.old_heatmap = self.resize_map_to_state(init_heatmap)
 
         self.poses=[self.get_peak_in_heatmap(self.pos_heatmap)]
 
@@ -86,8 +86,8 @@ class Track(object):
         self.update_embedding(self.embed_crop_fn(self.get_crop_at_current_pos(image), fake_id=track_id))
 
     # ==Heatmap stuff==
-    def resize_to_state(self, heatmap):
-        return scipy.misc.imresize(heatmap, self.state_shape, interp='bicubic', mode='F')
+    def resize_map_to_state(self, heatmap):
+        return lib.resize_map(heatmap, self.state_shape, interp='bicubic')
 
     def get_crop_at_pos(self,pos,image):
         # TODO: fix bb: 128x48
@@ -152,11 +152,11 @@ class Track(object):
         self.pos_heatmap = lib.convolve_edge_same(self.pos_heatmap, lib.gauss2d(self.KF.P))
 
     def track_update(self, id_heatmap, curr_frame, image):
-        id_heatmap = self.resize_to_state(id_heatmap)
+        self.id_heatmap = self.resize_map_to_state(id_heatmap)
 
         # heatmap
-        normalizer = 1
-        self.pos_heatmap = id_heatmap #(self.pos_heatmap*id_heatmap) / normalizer
+        self.pos_heatmap = self.pos_heatmap*self.id_heatmap
+        self.pos_heatmap /= np.sum(self.pos_heatmap)  # Re-normalize to probabilities
         # standard KF
         vel_measurement = self.get_velocity_estimate(self.old_heatmap, self.pos_heatmap)
         self.KF.update(vel_measurement)

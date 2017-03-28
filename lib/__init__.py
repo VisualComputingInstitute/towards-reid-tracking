@@ -76,11 +76,26 @@ def convolve_edge_same(image, filter):
     out_img = signal.convolve2d(out_img, filter, mode='valid', boundary='fill', fillvalue=0)
     return out_img
 
+
 ###############################################################################
 # Video handling, only with OpenCV
 
 try:
     import cv2
+
+
+    def resize_img(img, shape, interp=None):
+        if interp is None:
+            interp = cv2.INTER_AREA
+        elif interp is 'bicubic':
+            interp = cv2.INTER_CUBIC
+        else:
+            raise NotImplementedError("TODO: Interpolation {} in OpenCV".format(interp))
+
+        return cv2.resize(img, (shape[1], shape[0]), interpolation=cv2.INTER_AREA)
+
+
+    resize_map = resize_img
 
 
     def cv2df(img, shape, is_bgr=True):
@@ -149,7 +164,13 @@ try:
 
 
 except ImportError:
-    pass
+    import scipy
+
+    def resize_img(img, shape, interp='bilinear'):
+        return scipy.misc.imresize(img, shape, interp=interp, mode='RGB')
+
+    def resize_map(img, shape, interp='bicubic'):
+        return scipy.misc.imresize(img, shape, interp=interp, mode='F')
 
 
 ###############################################################################

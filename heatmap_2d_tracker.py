@@ -142,13 +142,25 @@ if __name__ == '__main__':
                         help='Path to `train` folder of 2DMOT2015.')
     parser.add_argument('--outdir', nargs='?', default='/home/breuers/results/duke_mtmc/',
                         help='Where to store generated output. Only needed if `--vis` is also passed.')
+    parser.add_argument('--model', default='lunet2',
+                        help='Name of the model to load. Corresponds to module names in lib/models. Or `fake`')
+    parser.add_argument('--weights',
+                        help='Name of the weights to load for the model (path to .pkl file).')
     parser.add_argument('--vis', action='store_true',
                         help='Generate and save visualization of the results.')
     args = parser.parse_args()
     print(args)
 
     # This is all for faking the network.
-    net = FakeNeuralNewsNetwork(lib.load_trainval(pjoin(args.basedir, 'ground_truth', 'trainval.mat')))
+    if args.model == 'fake':
+        net = FakeNeuralNewsNetwork(lib.load_trainval(pjoin(args.basedir, 'ground_truth', 'trainval.mat')))
+    else:
+        net = SemiFakeNews(
+            model=args.model,
+            weights=args.weights,
+            scale_factor=0.5,
+            fake_dets=lib.load_trainval(pjoin(args.basedir, 'ground_truth', 'trainval.mat'))
+        )
 
     # Prepare output dirs
     for icam in range(1, 8+1):
