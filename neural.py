@@ -14,7 +14,13 @@ class RealNews:
 
         mod = import_module('lib.models.' + model)
         self.net = add_defaults(mod.add_piou(mod.mknet()))
-        self.net.load(weights)
+
+        try:
+            self.net.load(weights)
+        except ValueError:
+            print("!!!!!!!THE WEIGHTS YOU LOADED DON'T BELONG TO THE MODEL YOU'RE USING!!!!!!")
+            raise
+
         self.net.evaluate()
 
         print("Precompiling network...", end='', flush=True)
@@ -88,10 +94,14 @@ class RealNews:
 
         if batch:
             out = self.net.forward(np.array([lib.img2df(img, shape=(int(H*self.scale_factor), int(W*self.scale_factor))) for img in images]))
+            return self.net.embs_from_out(out), self.net.ious_from_out(out)
         else:
-            out = np.array([self.net.forward(lib.img2df(img, shape=(int(H*self.scale_factor), int(W*self.scale_factor)))) for img in images])
-
-        return self.net.embs_from_out(out), self.net.ious_from_out(out)
+            embs, ious = [], []
+            for img in images:
+                out = self.net.forward(lib.img2df(img, shape=(int(H * self.scale_factor), int(W * self.scale_factor)))[None])
+                embs.append(self.net.embs_from_out(out)[0])
+                ious.append(self.net.ious_from_out(out)[0])
+            return np.array(embs), np.array(ious)
 
 
     def clear_known(self, image_personness, image_embs, known_embs):

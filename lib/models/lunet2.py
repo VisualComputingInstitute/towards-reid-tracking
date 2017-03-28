@@ -48,8 +48,10 @@ def add_piou(lunet2):
     newnet.add(df.RepeatInput(newnet.emb_mod, newnet.iou_mod))
 
     newnet.embs_from_out = lambda out: out[0]
-    newnet.ious_from_out = lambda out: out[1]
+    newnet.ious_from_out = lambda out: out[1][0]  # Also remove the first size-1 dimension.
 
     newnet.in_shape = lunet2.in_shape
+    newnet.scale_factor = lunet2.scale_factor
+
     print("Added {:.2f}k params".format(df.utils.count_params(newnet.iou_mod)/1000), flush=True)
     return newnet
