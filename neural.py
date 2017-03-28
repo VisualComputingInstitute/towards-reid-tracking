@@ -36,6 +36,7 @@ class SemiFakeNews(FakeNeuralNewsNetwork):
 
 
     def embed_crop(self, crop, *fakea, **fakekw):
+        assert (crop.shape[0]*self.scale_factor, crop.shape[1]*self.scale_factor) == self.net.in_shape
         X = lib.img2df(crop, shape=self.net.in_shape)
         return self.net.forward(X[None])[0,:,0,0]
 

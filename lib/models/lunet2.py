@@ -27,7 +27,8 @@ def mknet():
         dfext.resblock(128, **kw),
 
         # Eq. to flatten + linear
-        df.SpatialConvolutionCUDNN(128, 256, (4,1), bias=None), df.BatchNormalization(256, 0.95), df.ReLU(),
+        df.SpatialConvolutionCUDNN(128, 256, (4,1), bias=None),
+        df.BatchNormalization(256, 0.95), df.ReLU(),
 
         df.StoreOut(df.SpatialConvolutionCUDNN(256, 128, (1,1)))
     )
