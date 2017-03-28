@@ -173,8 +173,9 @@ class Track(object):
 
         if self.debug_out_dir is not None:
             with open(pjoin(self.debug_out_dir, 'pos_heatmaps.txt'), 'a') as f:
-                pct = [0,90,95,99,100]
-                f.write(('{},{},' + ','.join(['{}']*len(pct)) + '\n').format(self.track_id, curr_frame, *np.percentile(self.pos_heatmap, pct)))
+                vals = list(np.percentile(self.pos_heatmap, [0,90,95,99]))
+                vals.extend(np.sort(self.pos_heatmap.flatten())[-5:])
+                f.write(('{},{},' + ','.join(['{}']*len(vals)) + '\n').format(self.track_id, curr_frame, *vals))
 
         uniform = 1/np.prod(self.state_shape)
         T = uniform + self.person_matching_threshold*(1.0 - uniform)
