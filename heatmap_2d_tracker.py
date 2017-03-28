@@ -34,6 +34,10 @@ STATE_SHAPE = (270, 480)
 g_frames = 0  # Global counter for correct FPS in all cases
 
 
+def n_active_tracks(tracklist):
+    return sum(t.status == 'matched' for t in tracklist)
+
+
 #@profile
 def main(net, args):
     eval_path = pjoin(args.outdir, 'results/run_{:%Y-%m-%d_%H:%M:%S}.txt'.format(datetime.datetime.now()))
@@ -48,7 +52,7 @@ def main(net, args):
     # ===Tracking fun begins: iterate over frames===
     # TODO: global time (duke)
     for curr_frame in range(args.t0, args.t1+1):
-        print("\rFrame {}, {} tracks".format(curr_frame, list(map(len, track_lists))), end='', flush=True)
+        print("\rFrame {}, {} active tracks".format(curr_frame, list(map(n_active_tracks, track_lists))), end='', flush=True)
         net.tick(curr_frame)
 
         images = [plt.imread(pjoin(args.basedir, 'frames/camera{}/{}.jpg'.format(icam, lib.glob2loc(curr_frame, icam)))) for icam in range(1,8+1)]
