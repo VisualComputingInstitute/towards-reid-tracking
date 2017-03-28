@@ -16,6 +16,7 @@ import matplotlib as mpl
 #mpl.use('GTK')
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+from mpl_toolkits.axes_grid1 import ImageGrid
 
 #tracker stuff
 import lib
@@ -90,7 +91,7 @@ def main(net, args):
         #track_list = [i for i in track_list if i.status != 'deleted']
 
         # ==evaluation===
-        if (True):
+        if True:
             with open(eval_path, 'a') as eval_file:
                 for icam, track_list in zip(range(1, 8 + 1), track_lists):
                     for each_tracker in track_list:
@@ -103,19 +104,45 @@ def main(net, args):
                 # open image file
                 #curr_image = plt.imread(pjoin(args.basedir, 'frames/camera{}/{}.jpg'.format(icam, lib.glob2loc(curr_frame, icam))))  # TODO
                 curr_image = images[icam-1]
-                plt.imshow(curr_image, extent=[0, 1920//2, 1080//2, 0])
+                #fig = plt.figure()
+                #ig = ImageGrid(fig, 111, nrows_ncols=(2,2))
+                #axes = ig.axes_all
+                #(ax_tl, ax_tr), (ax_bl, ax_br) = ig.axes_row
+                fig, axes = plt.subplots(2, 2, sharex=True, sharey=True, figsize=(20,20))
+                (ax_tl, ax_tr), (ax_bl, ax_br) = axes
+                axes = axes.flatten()
+                #fig, ax = plt.subplots(1,1)
+                #axes = [ax]
+                #ax_bl = ax_br = ax
+
+                for ax in axes:
+                    #ax.imshow(curr_image, extent=[0, 1920//2, 1080//2, 0])
+                    ax.imshow(curr_image)
 
                 # plot (active) tracks
                 for each_tracker in track_list:
                     #if(each_tracker.track_id==3):
-                    each_tracker.plot_track(plot_past_trajectory=True, plot_heatmap=True, output_shape=(1080//2, 1920//2))
-                    #break
+                    if hasattr(each_tracker, 'pred_heatmap'):  # HACK because first don't have.
+                        each_tracker.plot_pred_heatmap(ax_tl)
+                    if hasattr(each_tracker, 'id_heatmap'):  # HACK because first don't have.
+                        each_tracker.plot_id_heatmap(ax_tr)
+                    each_tracker.plot_pos_heatmap(ax_bl)
+                    #each_tracker.plot_track(ax_br, plot_past_trajectory=True, output_shape=(1080//2, 1920//2))
+                    each_tracker.plot_track(ax_br, plot_past_trajectory=True)
                     #plt.gca().add_patch(patches.Rectangle((each_tracker.KF.x[0]-50, each_tracker.KF.x[2]-200),
                     #                                        100, 200, fill=False, linewidth=3, edgecolor=each_tracker.color))
 
+                for ax in axes:
+                    # TODO: Flex
+                    ax.set_xlim(0, 1920)
+                    ax.set_ylim(1080, 0)
+
                 #plt.imshow(curr_heatmap,alpha=0.5,interpolation='none',cmap='hot',extent=[0,curr_image.shape[1],curr_image.shape[0],0],clim=(0, 10))
-                savefig(pjoin(args.outdir, 'camera{}/res_img_{:06d}.jpg'.format(icam, curr_frame)), quality=80)
+                #savefig(pjoin(args.outdir, 'camera{}/res_img_{:06d}.jpg'.format(icam, curr_frame)), quality=80)
+                fig.savefig(pjoin(args.outdir, 'camera{}/res_img_{:06d}.jpg'.format(icam, curr_frame)),
+                            quality=80, bbox_inches='tight', pad_inches=0)
                 #plt.show()
+                #fig.close()
                 plt.close()
 
         global g_frames

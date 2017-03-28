@@ -364,8 +364,7 @@ def load_dat(basename):
 
 ###############################################################################
 # Plotting
-def get_transparent_colormap():
-    cmap = plt.cm.inferno
+def get_transparent_colormap(cmap=plt.cm.inferno):
     out_cmap = cmap(np.arange(cmap.N))
     out_cmap[:, -1] = np.linspace(0, 1, cmap.N)
     out_cmap = ListedColormap(out_cmap)

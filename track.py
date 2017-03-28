@@ -23,6 +23,8 @@ all_bs = np.array([[255.9004, -0.0205, 138.4768, 0.1939],
                    [209.2198, 0.0354, -296.9731, 0.7247],
                    [175.5730, 0.0077, 76.2798, 0.1737]])
 
+HOT_CMAP = lib.get_transparent_colormap()
+
 
 class Track(object):
 
@@ -151,6 +153,7 @@ class Track(object):
         self.old_heatmap = self.pos_heatmap
         self.pos_heatmap = scipy.ndimage.shift(self.pos_heatmap,self.KF.x)
         self.pos_heatmap = lib.convolve_edge_same(self.pos_heatmap, lib.gauss2d(self.KF.P))
+        self.pred_heatmap = self.pos_heatmap
 
     def track_update(self, id_heatmap, curr_frame, image):
         self.id_heatmap = self.resize_map_to_state(id_heatmap)
@@ -224,8 +227,9 @@ class Track(object):
         t = int(cY-h/2)
         return [cid, self.track_id, frame, l, t, w, h, -1, -1]
 
+
     # ==Visualization==
-    def plot_track(self, plot_past_trajectory=False, plot_heatmap=False, output_shape=None):
+    def plot_track(self, ax, plot_past_trajectory=False, output_shape=None):
         if output_shape is None:
             output_shape = self.output_shape
 
@@ -234,12 +238,25 @@ class Track(object):
 
         #plot_covariance_ellipse((self.KF.x[0], self.KF.x[2]), self.KF.P, fc=self.color, alpha=0.4, std=[1,2,3])
         #print(self.poses)
-        plt.plot(*self.state_to_output(*self.poses[-1], output_shape=output_shape), color=self.color, marker='o')
+        ax.plot(*self.state_to_output(*self.poses[-1], output_shape=output_shape), color=self.color, marker='o')
         #plt.text(*self.state_to_output(*self.poses[-1], output_shape=output_shape), s='{}'.format(self.embedding))
         if plot_past_trajectory and len(self.poses)>1:
             outputs_xy = self.states_to_outputs(np.array(self.poses), output_shape)
-            plt.plot(*outputs_xy.T, linewidth=2.0, color=self.color)
-        if plot_heatmap:
-            plt.imshow(self.pos_heatmap, alpha=0.5, interpolation='none', cmap='hot',
-                       #extent=[0, output_shape[1], output_shape[0], 0], clim=(0, 10))
-                       extent=[0, output_shape[1], output_shape[0], 0], clim=(0, 1))
+            ax.plot(*outputs_xy.T, linewidth=2.0, color=self.color)
+
+
+    def _plot_heatmap(self, ax, hm, output_shape=None):
+        if output_shape is None:
+            output_shape = self.output_shape
+
+        return ax.imshow(hm, interpolation='none', cmap=HOT_CMAP, clim=(0, 1), #alpha=0.5,
+                         extent=[0, output_shape[1], output_shape[0], 0])
+
+    def plot_pos_heatmap(self, ax, output_shape=None):
+        return self._plot_heatmap(ax, self.pos_heatmap, output_shape)
+
+    def plot_pred_heatmap(self, ax, output_shape=None):
+        return self._plot_heatmap(ax, self.pred_heatmap, output_shape)
+
+    def plot_id_heatmap(self, ax, output_shape=None):
+        return self._plot_heatmap(ax, self.id_heatmap, output_shape)
