@@ -40,6 +40,40 @@ def my_choice(candidates, n):
     return np.random.choice(candidates, n, len(candidates) < n)
 
 
+def randin(lo, hi):
+    return lo + np.random.rand()*(hi-lo)
+
+
+def ramp(e, e0, v0, e1, v1):
+    """
+    Return `v0` until `e` reaches `e0`, then linearly interpolate
+    to `v1` when `e` reaches `e1` and return `v1` thereafter.
+
+    Copyright (C) 2017 Lucas Beyer - http://lucasb.eyer.be =)
+    """
+    if e < e0:
+        return v0
+    elif e < e1:
+        return v0 + (v1-v0)*(e-e0)/(e1-e0)
+    else:
+        return v1
+
+
+def expdec(e, e0, v0, e1, v1):
+    """
+    Return `v0` until `e` reaches `e0`, then exponentially decay
+    to `v1` when `e` reaches `e1` and return `v1` thereafter.
+
+    Copyright (C) 2017 Lucas Beyer - http://lucasb.eyer.be =)
+    """
+    if e < e0:
+        return v0
+    elif e < e1:
+        return v0 * (v1/v0)**((e-e0)/(e1-e0))
+    else:
+        return v1
+
+
 def sane_listdir(where, ext='', sortkey=None):
     """
     Intended for internal use.
@@ -274,6 +308,29 @@ def rebox_centered(box, h, w, bounds=(0,0,1,1)):
     l, t, bw, bh = box
     cy, cx = t + bh/2, l + bw/2
     return stick_to_bounds((cx - w/2, cy - h/2, w, h), bounds)
+
+
+def wiggle_box(box, pct_move=None, factor_size=None):
+    """
+    As usual, box is `(l,t,w,h)`.
+    `pct_move` is max change, in % of boxsize: 0 means no change allowed, 1 means full box-size change allowed.
+    `factor_size` is maximum factor of up/down scaling, so 2 means up to half/double bbox-size.
+    """
+    l, t, w, h = box
+
+    if pct_move is not None:
+        l += randin(-w*pct_move, w*pct_move)
+        t += randin(-h*pct_move, h*pct_move)
+
+    nw, nh = w, h
+    if factor_size is not None:
+        sf = randin(1, factor_size)
+        if np.random.rand() < 0.5:
+            sf = 1/sf
+        nw *= sf
+        nh *= sf
+
+    return rebox_centered((l, t, w, h), nh, nw)
 
 
 def cutout_rel_chw(img, box):
