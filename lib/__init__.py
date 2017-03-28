@@ -133,10 +133,11 @@ try:
         else:
             raise NotImplementedError("TODO: Interpolation {} in OpenCV".format(interp))
 
-        return cv2.resize(img, (shape[1], shape[0]), interpolation=cv2.INTER_AREA)
+        return cv2.resize(img, (shape[1], shape[0]), interpolation=interp)
 
 
-    resize_map = resize_img
+    def resize_map(img, shape, interp='bicubic'):
+        return resize_img(img, shape, interp)
 
 
     def imwrite(fname, img):
