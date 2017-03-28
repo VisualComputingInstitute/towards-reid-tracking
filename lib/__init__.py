@@ -51,7 +51,14 @@ def sane_listdir(where, ext='', sortkey=None):
     return sorted((i for i in os.listdir(where) if not i.startswith('.') and i.endswith(ext)), key=sortkey)
 
 
-def img2df(img):
+def img2df(img, shape):
+    """
+    Convert raw images into what's needed by DeepFried.
+    This means: BGR->RGB, HWC->CHW and [0,255]->[0.0,1.0]
+
+    Note that `shape` is (H,W).
+    """
+    img = resize_img(img, shape)
     img = np.rollaxis(img, 2, 0)  # HWC to CHW
     img = img.astype(np.float32) / 255.0
     return img
@@ -98,17 +105,8 @@ try:
     resize_map = resize_img
 
 
-    def cv2df(img, shape, is_bgr=True):
-        """
-        Convert images as returned by cv2.imread into what's needed by DeepFried.
-        This means: BGR->RGB, HWC->CHW and [0,255]->[0.0,1.0]
-
-        Note that `shape` is (H,W), conversion to (W,H) for OpenCV is done internally.
-        """
-        img = cv2.resize(img, (shape[1], shape[0]), interpolation=cv2.INTER_AREA)
-        if is_bgr:
-            img = img[:,:,::-1]  # BGR to RGB
-        return img2df(img)
+    def imwrite(fname, img):
+        cv2.imwrite(fname, img[:,:,::-1])
 
 
     def video_or_open(video):
@@ -166,24 +164,17 @@ try:
 except ImportError:
     import scipy
 
+
     def resize_img(img, shape, interp='bilinear'):
         return scipy.misc.imresize(img, shape, interp=interp, mode='RGB')
+
 
     def resize_map(img, shape, interp='bicubic'):
         return scipy.misc.imresize(img, shape, interp=interp, mode='F')
 
-    def cv2df(img, shape, is_bgr=False):
-        """
-        Convert images as returned by cv2.imread into what's needed by DeepFried.
-        This means: BGR->RGB, HWC->CHW and [0,255]->[0.0,1.0]
 
-        Note that `shape` is (H,W), conversion to (W,H) for OpenCV is done internally.
-        """
-        img = resize_img(img, shape)
-        if is_bgr:
-            img = img[:,:,::-1]  # BGR to RGB
-        return img2df(img)
-
+    def imwrite(fname, img):
+        scipy.misc.imsave(fname, img[:,:,::-1])
 
 
 ###############################################################################

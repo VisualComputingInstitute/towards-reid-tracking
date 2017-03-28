@@ -34,13 +34,19 @@ g_frames = 0  # Global counter for correct FPS in all cases
 
 
 #@profile
-def main(net, t0, t1):
+def main(net, args):
     eval_path = pjoin(args.outdir, 'results/run_{:%Y-%m-%d_%H:%M:%S}.txt'.format(datetime.datetime.now()))
+    if args.debug:
+        debug_dir = pjoin(args.outdir, 'debug/run_{:%Y-%m-%d_%H:%M:%S}'.format(datetime.datetime.now()))
+        makedirs(debug_dir, exist_ok=True)
+    else:
+        debug_dir = None
+
     track_lists = [[], [], [], [], [], [], [], []]
 
     # ===Tracking fun begins: iterate over frames===
     # TODO: global time (duke)
-    for curr_frame in range(t0, t1+1):
+    for curr_frame in range(args.t0, args.t1+1):
         print("\rFrame {}, {} tracks".format(curr_frame, list(map(len, track_lists))), end='', flush=True)
         net.tick(curr_frame)
 
@@ -73,7 +79,9 @@ def main(net, t0, t1):
                 # TODO: get id_heatmap of that guy for init_heatmap
                 new_track = Track(net.embed_crop, SEQ_DT,
                                   curr_frame, new_heatmap, images[icam-1], track_id=new_id,
-                                  state_shape=STATE_SHAPE, output_shape=SEQ_SHAPE)
+                                  state_shape=STATE_SHAPE, output_shape=SEQ_SHAPE,
+                                  person_matching_threshold=0.01,
+                                  debug_out_dir=debug_dir)
                 track_lists[icam-1].append(new_track)
 
 
@@ -152,6 +160,8 @@ if __name__ == '__main__':
                         help='Time of last frame, inclusive.')
     parser.add_argument('--vis', action='store_true',
                         help='Generate and save visualization of the results.')
+    parser.add_argument('--debug', action='store_true',
+                        help='Generate extra many debugging outputs (in outdir).')
     args = parser.parse_args()
     print(args)
 
@@ -173,7 +183,7 @@ if __name__ == '__main__':
 
     tstart = time.time()
     try:
-        main(net, args.t0, args.t1)
+        main(net, args)
     except KeyboardInterrupt:
         print()
 

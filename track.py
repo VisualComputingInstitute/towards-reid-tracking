@@ -37,9 +37,10 @@ class Track(object):
 
     def __init__(self, embed_crop_fn, dt, curr_frame, init_heatmap, image,
                  state_shape, output_shape, track_dim=2, det_dim=2, track_id=-1,
-                 person_matching_threshold=0.5):
+                 person_matching_threshold=0.5, debug_out_dir=None):
         self.embed_crop_fn = embed_crop_fn
-        self.person_matching_threshold = 0.5
+        self.person_matching_threshold = person_matching_threshold
+        self.debug_out_dir = debug_out_dir
 
         init_x = [0.0, 0.0]
         init_P = [[10.0, 0], [0, 10.0]]
@@ -161,6 +162,10 @@ class Track(object):
         vel_measurement = self.get_velocity_estimate(self.old_heatmap, self.pos_heatmap)
         self.KF.update(vel_measurement)
 
+        if self.debug_out_dir is not None:
+            with open(pjoin(self.debug_out_dir, 'pos_heatmaps.txt'), 'a') as f:
+                pct = [0,90,95,99,100]
+                f.write(('{},{},' + ','.join(['{}']*len(pct)) + '\n').format(self.track_id, curr_frame, *np.percentile(self.pos_heatmap, pct)))
 
         uniform = 1/np.prod(self.state_shape)
         T = uniform + self.person_matching_threshold*(1.0 - uniform)
@@ -169,7 +174,8 @@ class Track(object):
 
             # update embedding. Needs to happen after the above, as that updates current_pos.
             crop = self.get_crop_at_current_pos(image)
-            #cv2.imwrite('/tmp/tracker-crop-{}-{}.jpg'.format(self.track_id, curr_frame), crop[:,:,::-1])
+            if self.debug_out_dir is not None:
+                lib.imwrite(pjoin(self.debug_out_dir, 'crops', '{}-{}.jpg'.format(self.track_id, curr_frame)), crop)
             self.update_embedding(self.embed_crop_fn(crop, fake_id=self.track_id))  # TODO: Make real
         else:
             self.track_is_missed(curr_frame)

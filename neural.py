@@ -34,14 +34,14 @@ class SemiFakeNews(FakeNeuralNewsNetwork):
 
 
     def embed_crop(self, crop, *fakea, **fakekw):
-        X = lib.cv2df(crop, shape=self.net.in_shape, is_bgr=False)
+        X = lib.img2df(crop, shape=self.net.in_shape)
         return self.net.forward(X[None])[0,:,0,0]
 
 
     def embed_image(self, image):
         # TODO: resize? multi-scale?
         H, W, _ = image.shape
-        X = lib.cv2df(image, shape=(int(H*self.scale_factor), int(W*self.scale_factor)), is_bgr=False)
+        X = lib.img2df(image, shape=(int(H*self.scale_factor), int(W*self.scale_factor)))
         return self.net.forward(X[None])[0]
 
 
