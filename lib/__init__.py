@@ -172,6 +172,19 @@ except ImportError:
     def resize_map(img, shape, interp='bicubic'):
         return scipy.misc.imresize(img, shape, interp=interp, mode='F')
 
+    def cv2df(img, shape, is_bgr=False):
+        """
+        Convert images as returned by cv2.imread into what's needed by DeepFried.
+        This means: BGR->RGB, HWC->CHW and [0,255]->[0.0,1.0]
+
+        Note that `shape` is (H,W), conversion to (W,H) for OpenCV is done internally.
+        """
+        img = resize_img(img, shape)
+        if is_bgr:
+            img = img[:,:,::-1]  # BGR to RGB
+        return img2df(img)
+
+
 
 ###############################################################################
 # Box utils
