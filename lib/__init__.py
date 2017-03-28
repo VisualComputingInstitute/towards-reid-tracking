@@ -69,7 +69,7 @@ def gauss2d(cov, nstd=2):
     guaranteed to return filter of odd shape which also keeps probabilities as probabilities.
     """
     sx, sy = np.sqrt(cov[0,0]), np.sqrt(cov[1,1])
-    x, y = np.mgrid[-int(nstd*sy):int(nstd*sy)+1:1, -int(nstd*sx):int(nstd*sx)+1:1]
+    x, y = np.mgrid[-max(1,int(nstd*sy)):max(1,int(nstd*sy))+1:1, -max(1,int(nstd*sx)):max(1,int(nstd*sx))+1:1]
     pos = np.dstack((y, x))
     rv = multivariate_normal([0, 0], cov)
     filter = rv.pdf(pos)
@@ -174,7 +174,7 @@ except ImportError:
 
 
     def imwrite(fname, img):
-        scipy.misc.imsave(fname, img[:,:,::-1])
+        scipy.misc.imsave(fname, img)
 
 
 ###############################################################################
