@@ -31,14 +31,14 @@ def argmax2d_xy(arr):
     return [idx[1], idx[0]]
 
 
-def softmax(x):
+def softmax(x, T=1):
     x = x - np.max(x)
-    eh = np.exp(x)
+    eh = np.exp(x/T)
     return eh / np.sum(eh)
 
 
-def softmin(x):
-    return softmax(-x)
+def softmin(x, T=1):
+    return softmax(-x, T=T)
 
 
 def my_choice(candidates, n):
