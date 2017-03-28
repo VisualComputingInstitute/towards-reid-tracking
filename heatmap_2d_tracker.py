@@ -39,7 +39,7 @@ def main(net, args):
     eval_path = pjoin(args.outdir, 'results/run_{:%Y-%m-%d_%H:%M:%S}.txt'.format(datetime.datetime.now()))
     if args.debug:
         debug_dir = pjoin(args.outdir, 'debug/run_{:%Y-%m-%d_%H:%M:%S}'.format(datetime.datetime.now()))
-        makedirs(debug_dir, exist_ok=True)
+        makedirs(pjoin(debug_dir, 'crops'), exist_ok=True)
     else:
         debug_dir = None
 
@@ -81,7 +81,7 @@ def main(net, args):
                 new_track = Track(net.embed_crop, SEQ_DT,
                                   curr_frame, new_heatmap, images[icam-1], track_id=new_id,
                                   state_shape=STATE_SHAPE, output_shape=SEQ_SHAPE,
-                                  person_matching_threshold=0.01,
+                                  person_matching_threshold=0.001,
                                   debug_out_dir=debug_dir)
                 track_lists[icam-1].append(new_track)
 
@@ -108,7 +108,7 @@ def main(net, args):
                 #ig = ImageGrid(fig, 111, nrows_ncols=(2,2))
                 #axes = ig.axes_all
                 #(ax_tl, ax_tr), (ax_bl, ax_br) = ig.axes_row
-                fig, axes = plt.subplots(2, 2, sharex=True, sharey=True, figsize=(20,20))
+                fig, axes = plt.subplots(2, 2, sharex=True, sharey=True, figsize=(20,12))
                 (ax_tl, ax_tr), (ax_bl, ax_br) = axes
                 axes = axes.flatten()
                 #fig, ax = plt.subplots(1,1)
@@ -124,23 +124,28 @@ def main(net, args):
                     #if(each_tracker.track_id==3):
                     if hasattr(each_tracker, 'pred_heatmap'):  # HACK because first don't have.
                         each_tracker.plot_pred_heatmap(ax_tl)
+                    ax_tl.set_title('Prior')
                     if hasattr(each_tracker, 'id_heatmap'):  # HACK because first don't have.
                         each_tracker.plot_id_heatmap(ax_tr)
+                    ax_tr.set_title('All ID-specific')
                     each_tracker.plot_pos_heatmap(ax_bl)
+                    ax_bl.set_title('Posterior')
                     #each_tracker.plot_track(ax_br, plot_past_trajectory=True, output_shape=(1080//2, 1920//2))
                     each_tracker.plot_track(ax_br, plot_past_trajectory=True)
+                    ax_br.set_title('All Tracks')
                     #plt.gca().add_patch(patches.Rectangle((each_tracker.KF.x[0]-50, each_tracker.KF.x[2]-200),
                     #                                        100, 200, fill=False, linewidth=3, edgecolor=each_tracker.color))
 
                 for ax in axes:
                     # TODO: Flex
-                    ax.set_xlim(0, 1920)
-                    ax.set_ylim(1080, 0)
+                    ax.set_adjustable('box-forced')
+                    ax.set_xlim(0, curr_image.shape[1])
+                    ax.set_ylim(curr_image.shape[0], 0)
 
                 #plt.imshow(curr_heatmap,alpha=0.5,interpolation='none',cmap='hot',extent=[0,curr_image.shape[1],curr_image.shape[0],0],clim=(0, 10))
                 #savefig(pjoin(args.outdir, 'camera{}/res_img_{:06d}.jpg'.format(icam, curr_frame)), quality=80)
                 fig.savefig(pjoin(args.outdir, 'camera{}/res_img_{:06d}.jpg'.format(icam, curr_frame)),
-                            quality=80, bbox_inches='tight', pad_inches=0)
+                            quality=80, bbox_inches='tight', pad_inches=0.2)
                 #plt.show()
                 #fig.close()
                 plt.close()

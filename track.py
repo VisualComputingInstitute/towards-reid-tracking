@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 from os.path import join as pjoin
 
 import lib
+import lbtoolbox.plotting as lbplt
 
 # all_bs for bbox regression
 all_bs = np.array([[255.9004, -0.0205, 138.4768, 0.1939],
@@ -45,10 +46,12 @@ class Track(object):
         self.debug_out_dir = debug_out_dir
 
         init_x = [0.0, 0.0]
-        init_P = [[10.0, 0], [0, 10.0]]
+        init_P = [[20.0, 0], [0, 20.0]]
 
         self.track_id = track_id
         self.color = np.random.rand(3)
+        self.hm_colormap = lbplt.linear_map(self.color,(1,1,1))
+        self.hm_colormap = lib.get_transparent_colormap(self.hm_colormap)
         self.xs=[init_x]
         self.Ps=[init_P]
 
@@ -60,8 +63,8 @@ class Track(object):
         self.KF.Q = q  # heatmap v only
         self.KF.H = np.array([[1, 0],
                               [0, 1]], dtype=np.float64)
-        self.KF.R = np.array([[10, 0],
-                              [0, 10]], dtype=np.float64)
+        self.KF.R = np.array([[10.0, 0],
+                              [0, 10.0]], dtype=np.float64)
         self.KF.x = init_x
         self.KF.P = init_P
 
@@ -153,6 +156,7 @@ class Track(object):
         self.old_heatmap = self.pos_heatmap
         self.pos_heatmap = scipy.ndimage.shift(self.pos_heatmap,self.KF.x)
         self.pos_heatmap = lib.convolve_edge_same(self.pos_heatmap, lib.gauss2d(self.KF.P))
+        self.pos_heatmap /= np.sum(self.pos_heatmap) # Re-normalize to probabilities
         self.pred_heatmap = self.pos_heatmap
 
     def track_update(self, id_heatmap, curr_frame, image):
@@ -218,9 +222,7 @@ class Track(object):
         #TODO
         #dukeMTMC format
         #[cam, ID, frame, left, top, width, height, worldX, worldY]
-        curr_pose = self.state_to_output(*self.poses[-1])
-        cX = curr_pose[0]
-        cY = curr_pose[1]
+        cX,cY = self.state_to_output(*self.poses[-1])
         h = int(((all_bs[cid-1][0]+all_bs[cid-1][1]*cX) + (all_bs[cid-1][2]+all_bs[cid-1][3]*cY))/2)
         w = int(0.4*h)
         l = int(cX-w/2)
@@ -238,7 +240,12 @@ class Track(object):
 
         #plot_covariance_ellipse((self.KF.x[0], self.KF.x[2]), self.KF.P, fc=self.color, alpha=0.4, std=[1,2,3])
         #print(self.poses)
-        ax.plot(*self.state_to_output(*self.poses[-1], output_shape=output_shape), color=self.color, marker='o')
+        cX, cY = self.state_to_output(*self.poses[-1], output_shape=output_shape)
+        vX, vY = self.state_to_output(*self.xs[-1], output_shape=output_shape)
+        #print('vX: {}, vY: {}'.format(vX,vY))
+        ax.plot(cX, cY, color=self.color, marker='o')
+        ax.arrow(cX, cY, vX*10, vY*10, head_width=15, head_length=5, fc=self.color, ec=self.color)
+        plot_covariance_ellipse((cX+vX*10, cY+vY*10), self.Ps[-1], fc=self.color, alpha=0.5, std=[1, 2, 3])
         #plt.text(*self.state_to_output(*self.poses[-1], output_shape=output_shape), s='{}'.format(self.embedding))
         if plot_past_trajectory and len(self.poses)>1:
             outputs_xy = self.states_to_outputs(np.array(self.poses), output_shape)
@@ -249,7 +256,7 @@ class Track(object):
         if output_shape is None:
             output_shape = self.output_shape
 
-        return ax.imshow(hm, interpolation='none', cmap=HOT_CMAP, clim=(0, 1), #alpha=0.5,
+        return ax.imshow(hm, interpolation='none', cmap=self.hm_colormap, clim=(0, 1), #alpha=0.5,
                          extent=[0, output_shape[1], output_shape[0], 0])
 
     def plot_pos_heatmap(self, ax, output_shape=None):
