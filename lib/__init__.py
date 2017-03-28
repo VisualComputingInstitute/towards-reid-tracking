@@ -26,6 +26,11 @@ TRAIN_START, TRAIN_END = 49700, 227540
 # Generic utilities
 
 
+def argmax2d_xy(arr):
+    idx = np.unravel_index(arr.argmax(), arr.shape)
+    return [idx[1], idx[0]]
+
+
 def softmax(x):
     x = x - np.max(x)
     eh = np.exp(x)

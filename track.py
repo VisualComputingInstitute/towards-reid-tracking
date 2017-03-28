@@ -38,7 +38,7 @@ class Track(object):
 
     """
 
-    def __init__(self, embed_crop_fn, dt, curr_frame, init_heatmap, image,
+    def __init__(self, embed_crop_fn, dt, curr_frame, init_pose, image,
                  state_shape, output_shape, track_dim=2, det_dim=2, track_id=-1,
                  person_matching_threshold=0.5, debug_out_dir=None):
         self.embed_crop_fn = embed_crop_fn
@@ -82,14 +82,14 @@ class Track(object):
         self.state_shape = state_shape
         self.output_shape = output_shape
 
-        self.pos_heatmap = self.resize_map_to_state(init_heatmap)
-        self.old_heatmap = self.resize_map_to_state(init_heatmap)
-
-        self.poses=[self.get_peak_in_heatmap(self.pos_heatmap)]
+        self.poses=[init_pose]
 
         self.embedding = None
-        # TODO: Make TID real
-        self.update_embedding(self.embed_crop_fn(self.get_crop_at_current_pos(image), fake_id=track_id))
+        self.update_embedding(self.get_embedding_at_current_pos(image, curr_frame))
+
+    def init_heatmap(self, heatmap):
+        self.pos_heatmap = self.resize_map_to_state(heatmap)
+        self.old_heatmap = None
 
     # ==Heatmap stuff==
     def resize_map_to_state(self, heatmap):
@@ -110,9 +110,11 @@ class Track(object):
             image
         )
 
-    def get_peak_in_heatmap(self,heatmap):
-        idx = np.unravel_index(heatmap.argmax(), heatmap.shape)
-        return [idx[1],idx[0]]
+    def get_embedding_at_current_pos(self, image, debug_curr_frame):
+        crop = self.get_crop_at_current_pos(image)
+        if self.debug_out_dir is not None:
+            lib.imwrite(pjoin(self.debug_out_dir, 'crops', '{}-{}.jpg'.format(self.track_id, debug_curr_frame)), crop)
+        return self.embed_crop_fn(crop, fake_id=self.track_id)
 
     def get_regressed_bbox_hw(self,pos):
         return[w,h]
@@ -147,8 +149,8 @@ class Track(object):
         return xy*factors
 
     def get_velocity_estimate(self,old_heatmap, pos_heatmap):
-        old_peak = self.get_peak_in_heatmap(old_heatmap)
-        new_peak = self.get_peak_in_heatmap(pos_heatmap)
+        old_peak = lib.argmax2d_xy(old_heatmap)
+        new_peak = lib.argmax2d_xy(pos_heatmap)
         return np.subtract(new_peak,old_peak)
 
     def track_predict(self):
@@ -183,10 +185,7 @@ class Track(object):
             self.track_is_matched(curr_frame)
 
             # update embedding. Needs to happen after the above, as that updates current_pos.
-            crop = self.get_crop_at_current_pos(image)
-            if self.debug_out_dir is not None:
-                lib.imwrite(pjoin(self.debug_out_dir, 'crops', '{}-{}.jpg'.format(self.track_id, curr_frame)), crop)
-            self.update_embedding(self.embed_crop_fn(crop, fake_id=self.track_id))  # TODO: Make real
+            self.update_embedding(self.get_embedding_at_current_pos(image, curr_frame))
         else:
             self.track_is_missed(curr_frame)
 
@@ -201,7 +200,7 @@ class Track(object):
             self.age += 1
             self.xs.append(self.KF.x)
             self.Ps.append(self.KF.P)
-            self.poses.append(self.get_peak_in_heatmap(self.pos_heatmap))
+            self.poses.append(lib.argmax2d_xy(self.pos_heatmap))
 
     def track_is_matched(self,curr_frame):
         self.last_matched_at = curr_frame
@@ -210,7 +209,7 @@ class Track(object):
         self.age += 1
         self.xs.append(self.KF.x)
         self.Ps.append(self.KF.P)
-        self.poses.append(self.get_peak_in_heatmap(self.pos_heatmap))
+        self.poses.append(lib.argmax2d_xy(self.pos_heatmap))
 
     def track_is_deleted(self,curr_frame):
         self.deleted_at = curr_frame

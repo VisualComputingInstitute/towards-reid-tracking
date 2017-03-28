@@ -48,6 +48,7 @@ def main(net, args):
         debug_dir = None
 
     track_lists = [[], [], [], [], [], [], [], []]
+    track_id = 1
 
     # ===Tracking fun begins: iterate over frames===
     # TODO: global time (duke)
@@ -80,20 +81,40 @@ def main(net, args):
         for icam in range(1, 8 + 1):
             net.fake_camera(icam)
 
-            personness = net.clear_known(image_personnesses[icam-1], image_embeddings[icam-1], known_embs=[])
+            known_embs = [track.embedding for track in track_lists[icam-1]]
+            personness = net.clear_known(image_personnesses[icam-1], image_embeddings[icam-1], known_embs=known_embs)
 
+            # B.1) COMMENT IN FOR SEMI-FAKE
             # TODO: ID management (duke)
-            for new_heatmap, new_id in net.personness(images[icam-1], known_embs=None):
-                # TODO: get correct track_id (loop heatmap, instead of function call?# )
-                # TODO: get id_heatmap of that guy for init_heatmap
-                new_heatmap = net.fix_shape(new_heatmap, images[icam-1].shape, STATE_SHAPE, fill_value=0)
+            # for new_heatmap, new_id in net.personness(images[icam-1], known_embs=None):
+            #     # TODO: get correct track_id (loop heatmap, instead of function call?# )
+            #     # TODO: get id_heatmap of that guy for init_heatmap
+            #     new_heatmap = net.fix_shape(new_heatmap, images[icam-1].shape, STATE_SHAPE, fill_value=0)
+            #     init_pose = lib.argmax2d_xy(self.pos_heatmap)
+            #     new_track = Track(net.embed_crop, SEQ_DT,
+            #                       curr_frame, init_pose, images[icam-1], track_id=new_id,
+            #                       state_shape=STATE_SHAPE, output_shape=SEQ_SHAPE,
+            #                       person_matching_threshold=0.001,
+            #                       debug_out_dir=debug_dir)
+            #     new_track.init_heatmap(new_heatmap)
+            #     track_lists[icam-1].append(new_track)
+
+            # B.2) REAL NEWS
+            # TODO: Missing non-max suppression
+            for y_idx, x_idx in zip(*np.where(personness>0.5)):
+                init_pose = [y_idx, x_idx]
                 new_track = Track(net.embed_crop, SEQ_DT,
-                                  curr_frame, new_heatmap, images[icam-1], track_id=new_id,
+                                  curr_frame, init_pose, images[icam-1], track_id=track_id,
                                   state_shape=STATE_SHAPE, output_shape=SEQ_SHAPE,
                                   person_matching_threshold=0.001,
                                   debug_out_dir=debug_dir)
-                track_lists[icam-1].append(new_track)
 
+                # Embed around the initial pose and compute an initial heatmap.
+                id_heatmap = net.search_person(image_embeddings[icam-1], new_track.embedding)
+                id_heatmap = net.fix_shape(id_heatmap, images[icam-1].shape, STATE_SHAPE, fill_value=0)
+                new_track.init_heatmap(id_heatmap)
+                track_id += 1
+                track_list.append(new_track)
 
         ### C) further track-management
         # delete tracks marked as 'deleted' in this tracking cycle #TODO: manage in other list for re-id
