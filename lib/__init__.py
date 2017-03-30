@@ -360,6 +360,14 @@ def cutout_abs_hwc(img, box):
     return img[t:t+h,l:l+w]
 
 
+def box_rel2abs(box,h=1080,w=1920):
+    return [box[0]*w, box[1]*h, box[2]*w, box[3]*h]
+
+
+def box_center_xy(box):
+    return [box[0] + box[2] / 2., box[1] + box[3] / 2.]
+
+
 ###############################################################################
 # Frame-switching
 
