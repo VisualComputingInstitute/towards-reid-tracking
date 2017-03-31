@@ -4,7 +4,7 @@ import numpy as np
 import DeepFried2 as df
 from scipy.spatial.distance import cdist
 
-#from lbtoolbox.util import batched
+from lbtoolbox.util import batched
 
 import lib
 from lib.models import add_defaults
@@ -59,11 +59,11 @@ class SemiFakeNews:
             self.fake.fake_camera(*a, **kw)
 
 
-    def embed_crops(self, crops, *fakea, **fakekw):
+    def embed_crops(self, crops, *fakea, batchsize=32, **fakekw):
         assert all(self._scale_input_shape(crop.shape) == self.net.in_shape for crop in crops)
 
         X = np.array([lib.img2df(crop, shape=self.net.in_shape) for crop in crops])
-        out = self.net.forward(X)
+        out = np.concatenate([self.net.forward(Xb) for Xb in batched(batchsize, X)])
         return out[:,:,0,0]  # Output is Dx1x1
 
 
