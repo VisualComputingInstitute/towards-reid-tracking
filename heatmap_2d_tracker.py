@@ -30,56 +30,93 @@ SEQ_FPS = 60.0
 SEQ_DT = 1./SEQ_FPS
 SEQ_SHAPE = (1080, 1920)
 STATE_SHAPE = (270, 480)  # Heatmaps: (26, 58) -> (33, 60)
+NUM_CAMS = 2 # which cam to consider (from 1 to NUM_CAMS), max: 8
+SCALE_FACTOR = 0.5
 
 
 g_frames = 0  # Global counter for correct FPS in all cases
 
 
 def n_active_tracks(tracklist):
-    return sum(t.status == 'matched' for t in tracklist)
+    return '{:2d} +{:2d} +{:2d} ={:2d}'.format(
+        sum(t.status == 'matched' for t in tracklist),
+        sum(t.status == 'missed' for t in tracklist),
+        sum(t.status == 'init' for t in tracklist),
+        len(tracklist),
+    )
+    # from collections import Counter
+    #return str(Counter(t.status for t in tracklist).most_common())
+
+
+def shall_vis(args, curr_frame):
+    return args.vis and (curr_frame - args.t0) % args.vis == 0
 
 
 #@profile
 def main(net, args):
     eval_path = pjoin(args.outdir, 'results/run_{:%Y-%m-%d_%H:%M:%S}.txt'.format(datetime.datetime.now()))
+
+    debug_dir = None
     if args.debug:
         debug_dir = pjoin(args.outdir, 'debug/run_{:%Y-%m-%d_%H:%M:%S}'.format(datetime.datetime.now()))
         makedirs(pjoin(debug_dir, 'crops'), exist_ok=True)
-    else:
-        debug_dir = None
 
-    track_lists = [[], [], [], [], [], [], [], []]
+    track_lists = [[] for _ in range(NUM_CAMS)]
     track_id = 1
 
     # ===Tracking fun begins: iterate over frames===
     # TODO: global time (duke)
     for curr_frame in range(args.t0, args.t1+1):
-        print("\rFrame {}, {} active tracks".format(curr_frame, list(map(n_active_tracks, track_lists))), end='', flush=True)
+        print("\rFrame {}, {} matched/missed/init/total tracks, {} total seen".format(curr_frame, ', '.join(map(n_active_tracks, track_lists)), sum(map(len, track_lists))), end='', flush=True)
         net.tick(curr_frame)
 
         images = [plt.imread(pjoin(args.basedir, 'frames/camera{}/{}.jpg'.format(icam, lib.glob2loc(curr_frame, icam)))) for icam in range(1,8+1)]
         image_embeddings = net.embed_images(images, batch=args.large_gpu)
 
-        for icam, track_list in zip(range(1, 8+1), track_lists):
+        for icam, track_list in zip(range(1, NUM_CAMS+1), track_lists):
             net.fake_camera(icam)
+
+
+            # ===visualization===
+            # First, plot what data we have before doing anything.
+            if shall_vis(args, curr_frame):
+                fig, axes = plt.subplots(3, 2, sharex=True, sharey=True, figsize=(20,12))
+                (ax_tl, ax_tr), (ax_ml, ax_mr), (ax_bl, ax_br) = axes
+                axes = axes.flatten()
+
+                for ax in axes:
+                    ax.imshow(images[icam-1], extent=[0, 1920, 1080, 0])
+
+                # plot (active) tracks
+                ax_tl.set_title('Raw Personness')
+                ax_tr.set_title('Filtered Personness')
+                ax_ml.set_title('Prior')
+                ax_mr.set_title('All ID-specific')
+                ax_bl.set_title('Posterior')
+                ax_br.set_title('All Tracks')
+            # ===/visualization===
+
 
             ### A) update existing tracks
             for itracker, track in enumerate(track_list):
-                # get ID_heatmap
+                # ---PREDICT---
+                track.track_predict()
+                if shall_vis(args, curr_frame):
+                    track.plot_pred_heatmap(ax_ml)
+
+                # ---SEARCH---
                 id_heatmap = net.search_person(image_embeddings[icam-1], track.embedding,
                                                fake_track_id=track.track_id)  # Unused by real net.
                 id_heatmap = net.fix_shape(id_heatmap, images[icam-1].shape, STATE_SHAPE, fill_value=0)
-                # ---PREDICT---
-                track.track_predict()
+
                 # ---UPDATE---
                 track.track_update(id_heatmap, curr_frame, images[icam-1])
 
+                if shall_vis(args, curr_frame):
+                    track.plot_id_heatmap(ax_mr)
 
-
-        ### B) get new tracks from general heatmap
-        viz_per_cam_personnesses = []
-        for icam in range(1, 8 + 1):
-            net.fake_camera(icam)
+            ### B) get new tracks from general heatmap
+            viz_per_cam_personnesses = []
 
             #known_embs = [track.embedding for track in track_lists[icam-1]]
             #personness = net.clear_known(image_personnesses[icam-1], image_embeddings[icam-1], known_embs=known_embs)
@@ -118,76 +155,30 @@ def main(net, args):
             #     track_id += 1
             #     track_list.append(new_track)
 
-        ### C) further track-management
-        # delete tracks marked as 'deleted' in this tracking cycle #TODO: manage in other list for re-id
-        #track_list = [i for i in track_list if i.status != 'deleted']
-
-        # ==evaluation===
-        if True:
-            with open(eval_path, 'a') as eval_file:
-                for icam, track_list in zip(range(1, 8 + 1), track_lists):
-                    for each_tracker in track_list:
-                        track_eval_line = each_tracker.get_track_eval_line(cid=icam,frame=curr_frame)
-                        eval_file.write('{} {} {} {} {} {} {} {} {}\n'.format(*track_eval_line))
-
-        # ===visualization===
-        if args.vis:
-            for icam, track_list in zip(range(1, 8 + 1), track_lists):
-                # open image file
-                #curr_image = plt.imread(pjoin(args.basedir, 'frames/camera{}/{}.jpg'.format(icam, lib.glob2loc(curr_frame, icam))))  # TODO
-                curr_image = images[icam-1]
-                #fig = plt.figure()
-                #ig = ImageGrid(fig, 111, nrows_ncols=(2,2))
-                #axes = ig.axes_all
-                #(ax_tl, ax_tr), (ax_bl, ax_br) = ig.axes_row
-                fig, axes = plt.subplots(3, 2, sharex=True, sharey=True, figsize=(20,12))
-                (ax_tl, ax_tr), (ax_ml, ax_mr), (ax_bl, ax_br) = axes
-                axes = axes.flatten()
-                #fig, ax = plt.subplots(1,1)
-                #axes = [ax]
-                #ax_bl = ax_br = ax
-
-                for ax in axes:
-                    #ax.imshow(curr_image, extent=[0, 1920//2, 1080//2, 0])
-                    ax.imshow(curr_image)
-
-                # plot (active) tracks
-                #raw_personness = net.fix_shape(image_personnesses[icam-1], images[icam - 1].shape, STATE_SHAPE, fill_value=0)
-                #ax_tl.imshow(raw_personness, interpolation='bicubic', cmap='hot', alpha=0.5, clim=(0, 1),
-                #         extent=[0, SEQ_SHAPE[1], SEQ_SHAPE[0], 0])
-                ax_tl.set_title('Raw Personness')
-                #ax_tr.imshow(viz_per_cam_personnesses[icam-1], interpolation='bicubic', cmap='hot', alpha=0.5, clim=(0, 1),
-                #         extent=[0, SEQ_SHAPE[1], SEQ_SHAPE[0], 0])
-                ax_tr.set_title('Filtered Personness')
-                ax_ml.set_title('Prior')
-                ax_mr.set_title('All ID-specific')
-                ax_bl.set_title('Posterior')
-                ax_br.set_title('All Tracks')
-                for each_tracker in track_list:
-                    #if(each_tracker.track_id==3):
-                    if hasattr(each_tracker, 'pred_heatmap'):  # HACK because first don't have.
-                        each_tracker.plot_pred_heatmap(ax_ml)
-                    if hasattr(each_tracker, 'id_heatmap'):  # HACK because first don't have.
-                        each_tracker.plot_id_heatmap(ax_mr)
-                    each_tracker.plot_pos_heatmap(ax_bl)
-                    #each_tracker.plot_track(ax_br, plot_past_trajectory=True, output_shape=(1080//2, 1920//2))
-                    each_tracker.plot_track(ax_br, plot_past_trajectory=True)
-                    #plt.gca().add_patch(patches.Rectangle((each_tracker.KF.x[0]-50, each_tracker.KF.x[2]-200),
-                    #                                        100, 200, fill=False, linewidth=3, edgecolor=each_tracker.color))
+            if shall_vis(args, curr_frame):
+                track.plot_pos_heatmap(ax_bl)
+                track.plot_track(ax_br, plot_past_trajectory=True)
 
                 for ax in axes:
                     # TODO: Flex
                     ax.set_adjustable('box-forced')
-                    ax.set_xlim(0, curr_image.shape[1])
-                    ax.set_ylim(curr_image.shape[0], 0)
+                    ax.set_xlim(0, 1920)
+                    ax.set_ylim(1080, 0)
+                    fig.savefig(pjoin(args.outdir, 'camera{}/res_img_{:06d}.jpg'.format(icam, curr_frame)),
+                                quality=80, bbox_inches='tight', pad_inches=0.2)
+                    plt.close()
 
-                #plt.imshow(curr_heatmap,alpha=0.5,interpolation='none',cmap='hot',extent=[0,curr_image.shape[1],curr_image.shape[0],0],clim=(0, 10))
-                #savefig(pjoin(args.outdir, 'camera{}/res_img_{:06d}.jpg'.format(icam, curr_frame)), quality=80)
-                fig.savefig(pjoin(args.outdir, 'camera{}/res_img_{:06d}.jpg'.format(icam, curr_frame)),
-                            quality=80, bbox_inches='tight', pad_inches=0.2)
-                #plt.show()
-                #fig.close()
-                plt.close()
+            ### C) further track-management
+            # delete tracks marked as 'deleted' in this tracking cycle #TODO: manage in other list for re-id
+            #track_list = [i for i in track_list if i.status != 'deleted']
+
+
+        # ==evaluation===
+        with open(eval_path, 'a') as eval_file:
+            for icam, track_list in zip(range(1, 8 + 1), track_lists):
+                for track in track_list:
+                    track_eval_line = track.get_track_eval_line(cid=icam, frame=curr_frame)
+                    eval_file.write('{} {} {} {} {} {} {} {} {}\n'.format(*track_eval_line))
 
         global g_frames
         g_frames += 1
@@ -231,8 +222,8 @@ if __name__ == '__main__':
                         help='Time of last frame, inclusive.')
     parser.add_argument('--large_gpu', action='store_true',
                         help='Large GPU can forward more at once.')
-    parser.add_argument('--vis', action='store_true',
-                        help='Generate and save visualization of the results.')
+    parser.add_argument('--vis', default=0, type=int,
+                        help='Generate and save visualization of the results, every X frame.')
     parser.add_argument('--debug', action='store_true',
                         help='Generate extra many debugging outputs (in outdir).')
     args = parser.parse_args()
