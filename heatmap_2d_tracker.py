@@ -59,7 +59,7 @@ def main(net, args):
         images = [plt.imread(pjoin(args.basedir, 'frames/camera{}/{}.jpg'.format(icam, lib.glob2loc(curr_frame, icam)))) for icam in range(1,8+1)]
 
         #image_embeddings, image_personnesses = zip(*map(net.embed_image, images))
-        image_embeddings, image_personnesses = net.embed_and_personness_multi(images)
+        image_embeddings, image_personnesses = net.embed_and_personness_multi(images, batch=not args.large_gpu)
 
         for icam, track_list in zip(range(1, 8+1), track_lists):
             net.fake_camera(icam)
@@ -231,6 +231,8 @@ if __name__ == '__main__':
                         help='Time of first frame.')
     parser.add_argument('--t1', default=227540,
                         help='Time of last frame, inclusive.')
+    parser.add_argument('--large_gpu', action='store_true',
+                        help='Large GPU can forward more at once.')
     parser.add_argument('--vis', action='store_true',
                         help='Generate and save visualization of the results.')
     parser.add_argument('--debug', action='store_true',
