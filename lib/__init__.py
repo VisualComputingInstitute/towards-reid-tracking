@@ -90,14 +90,14 @@ def sane_listdir(where, ext='', sortkey=None):
     return sorted((i for i in os.listdir(where) if not i.startswith('.') and i.endswith(ext)), key=sortkey)
 
 
-def img2df(img, shape):
+def img2df(img, shape=None):
     """
     Convert raw images into what's needed by DeepFried.
     This means: BGR->RGB, HWC->CHW and [0,255]->[0.0,1.0]
 
     Note that `shape` is (H,W).
     """
-    img = resize_img(img, shape)
+    img = resize_img(img, shape=shape)
     img = np.rollaxis(img, 2, 0)  # HWC to CHW
     img = img.astype(np.float32) / 255.0
     return img
@@ -123,6 +123,21 @@ def convolve_edge_same(image, filter):
     return out_img
 
 
+def paste_into_middle_2d(x, out_shape, fill_value=0):
+    if x.shape == out_shape:
+        return np.array(x)
+
+    h, w = x.shape
+    H, W = out_shape
+    dy, dx = (H-h)//2, (W-w)//2
+
+    assert 0 <= dy and 0 <= dx,  "Something wrong with shape-fixing! {} = ({}-{})//2 and {} = ({}-{})//2".format(dy, H, h, dx, W, w)
+
+    out = np.full((H,W), fill_value, dtype=x.dtype)
+    out[dy:H-dy,dx:W-dx] = x
+    return out
+
+
 ###############################################################################
 # Video handling, only with OpenCV
 
@@ -130,7 +145,10 @@ try:
     import cv2
 
 
-    def resize_img(img, shape, interp=None):
+    def resize_img(img, shape=None, interp=None, is_chw=False):
+        if shape is None:
+            return np.array(img)
+
         if interp is None:
             interp = cv2.INTER_AREA
         elif interp is 'bicubic':
@@ -138,7 +156,15 @@ try:
         else:
             raise NotImplementedError("TODO: Interpolation {} in OpenCV".format(interp))
 
-        return cv2.resize(img, (shape[1], shape[0]), interpolation=interp)
+        if is_chw:
+            img = np.rollaxis(img, 0, 3)  # CHW to HWC
+
+        img = cv2.resize(img, (shape[1], shape[0]), interpolation=interp)
+
+        if is_chw:
+            img = np.rollaxis(img, 2, 0)  # HWC to CHW
+
+        return img
 
 
     def resize_map(img, shape, interp='bicubic'):
@@ -205,7 +231,10 @@ except ImportError:
     import scipy
 
 
-    def resize_img(img, shape, interp='bilinear'):
+    def resize_img(img, shape=None, interp='bilinear'):
+        if shape is None:
+            return np.array(img)
+
         return scipy.misc.imresize(img, shape, interp=interp, mode='RGB')
 
 
@@ -248,6 +277,10 @@ def iou(box1, box2):
 
 def max_iou(r, others):
     return max(iou(r, o) for o in others)
+
+
+def argmax_iou(r, others):
+    return np.argmax([iou(r, o) for o in others])
 
 
 def sample_around(boxes, size, imsize=(1,1), nstd=3):
