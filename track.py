@@ -38,10 +38,10 @@ class Track(object):
 
     """
 
-    def __init__(self, embed_crop_fn, dt, curr_frame, init_pose, image,
-                 state_shape, output_shape, track_dim=2, det_dim=2, track_id=-1,
+    def __init__(self, embed_crops_fn, dt, curr_frame, init_pose, image,
+                 state_shape, output_shape, track_id=-1,
                  person_matching_threshold=0.5, debug_out_dir=None):
-        self.embed_crop_fn = embed_crop_fn
+        self.embed_crops_fn = embed_crops_fn
         self.person_matching_threshold = person_matching_threshold
         self.debug_out_dir = debug_out_dir
 
@@ -55,7 +55,7 @@ class Track(object):
         self.xs=[init_x]
         self.Ps=[init_P]
 
-        self.KF = KalmanFilter(dim_x=track_dim, dim_z=det_dim)
+        self.KF = KalmanFilter(dim_x=2, dim_z=2)
         self.KF.F = np.array([[1, 0],
                               [0, 1]], dtype=np.float64)
         q = Q_discrete_white_noise(dim=2, dt=dt, var=10.)
@@ -114,7 +114,7 @@ class Track(object):
         crop = self.get_crop_at_current_pos(image)
         if self.debug_out_dir is not None:
             lib.imwrite(pjoin(self.debug_out_dir, 'crops', '{}-{}.jpg'.format(self.track_id, debug_curr_frame)), crop)
-        return self.embed_crop_fn(crop, fake_id=self.track_id)
+        return self.embed_crops_fn(crop[None], fake_id=self.track_id)[0]
 
     def get_regressed_bbox_hw(self,pos):
         return[w,h]

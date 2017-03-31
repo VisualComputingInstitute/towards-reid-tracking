@@ -68,7 +68,8 @@ class SemiFakeNews:
         return cdist(embsA, embsB)
 
 
-    def embed_images(self, images):
+    def embed_images(self, images, batch=True):
+        # TODO: batch=False
         X = np.array([lib.img2df(img, shape=self._scale_input_shape(img.shape)) for img in images])
         return self.net_hires.forward(X)
 

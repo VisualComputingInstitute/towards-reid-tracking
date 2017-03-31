@@ -22,13 +22,14 @@ from mpl_toolkits.axes_grid1 import ImageGrid
 import lib
 from track import Track
 from fakenews import FakeNeuralNewsNetwork
-from neural import SemiFakeNews, RealNews
+from semifake import SemiFakeNews
+#from neural import RealNews
 
 
 SEQ_FPS = 60.0
 SEQ_DT = 1./SEQ_FPS
 SEQ_SHAPE = (1080, 1920)
-STATE_SHAPE = (270, 480)
+STATE_SHAPE = (270, 480)  # Heatmaps: (26, 58) -> (33, 60)
 
 
 g_frames = 0  # Global counter for correct FPS in all cases
@@ -57,23 +58,21 @@ def main(net, args):
         net.tick(curr_frame)
 
         images = [plt.imread(pjoin(args.basedir, 'frames/camera{}/{}.jpg'.format(icam, lib.glob2loc(curr_frame, icam)))) for icam in range(1,8+1)]
-
-        #image_embeddings, image_personnesses = zip(*map(net.embed_image, images))
-        image_embeddings, image_personnesses = net.embed_and_personness_multi(images, batch=not args.large_gpu)
+        image_embeddings = net.embed_images(images, batch=args.large_gpu)
 
         for icam, track_list in zip(range(1, 8+1), track_lists):
             net.fake_camera(icam)
 
             ### A) update existing tracks
-            for itracker, each_tracker in enumerate(track_list):
+            for itracker, track in enumerate(track_list):
                 # get ID_heatmap
-                id_heatmap = net.search_person(image_embeddings[icam-1], each_tracker.embedding,
-                                               fake_track_id=each_tracker.track_id)
+                id_heatmap = net.search_person(image_embeddings[icam-1], track.embedding,
+                                               fake_track_id=track.track_id)  # Unused by real net.
                 id_heatmap = net.fix_shape(id_heatmap, images[icam-1].shape, STATE_SHAPE, fill_value=0)
                 # ---PREDICT---
-                each_tracker.track_predict()
+                track.track_predict()
                 # ---UPDATE---
-                each_tracker.track_update(id_heatmap, curr_frame, images[icam-1])
+                track.track_update(id_heatmap, curr_frame, images[icam-1])
 
 
 
@@ -82,42 +81,42 @@ def main(net, args):
         for icam in range(1, 8 + 1):
             net.fake_camera(icam)
 
-            known_embs = [track.embedding for track in track_lists[icam-1]]
-            personness = net.clear_known(image_personnesses[icam - 1], image_embeddings[icam - 1], known_embs=known_embs)
-            personness = net.fix_shape(personness, images[icam - 1].shape, STATE_SHAPE, fill_value=0)
-            viz_per_cam_personnesses.append(personness)
+            #known_embs = [track.embedding for track in track_lists[icam-1]]
+            #personness = net.clear_known(image_personnesses[icam-1], image_embeddings[icam-1], known_embs=known_embs)
+            #personness = net.fix_shape(personness, images[icam-1].shape, STATE_SHAPE, fill_value=0)
+            #viz_per_cam_personnesses.append(personness)
 
             # B.1) COMMENT IN FOR SEMI-FAKE
-            # TODO: ID management (duke)
-            # for new_heatmap, new_id in net.personness(images[icam-1], known_embs=None):
-            #     # TODO: get correct track_id (loop heatmap, instead of function call?# )
-            #     # TODO: get id_heatmap of that guy for init_heatmap
-            #     new_heatmap = net.fix_shape(new_heatmap, images[icam-1].shape, STATE_SHAPE, fill_value=0)
-            #     init_pose = lib.argmax2d_xy(self.pos_heatmap)
-            #     new_track = Track(net.embed_crop, SEQ_DT,
-            #                       curr_frame, init_pose, images[icam-1], track_id=new_id,
-            #                       state_shape=STATE_SHAPE, output_shape=SEQ_SHAPE,
-            #                       person_matching_threshold=0.001,
-            #                       debug_out_dir=debug_dir)
-            #     new_track.init_heatmap(new_heatmap)
-            #     track_lists[icam-1].append(new_track)
-
-            # B.2) REAL NEWS
-            # TODO: Missing non-max suppression
-            for y_idx, x_idx in zip(*np.where(personness>1.5)):
-                init_pose = [y_idx, x_idx]
-                new_track = Track(net.embed_crop, SEQ_DT,
-                                  curr_frame, init_pose, images[icam-1], track_id=track_id,
+            # TODO: Make semi-fake by generating heatmap and clearing out known_embs
+            for new_heatmap, new_id in net.personness(images[icam-1], known_embs=None):
+                # TODO: get correct track_id (loop heatmap, instead of function call?# )
+                # TODO: get id_heatmap of that guy for init_heatmap
+                new_heatmap = net.fix_shape(new_heatmap, images[icam-1].shape, STATE_SHAPE, fill_value=0)
+                init_pose = lib.argmax2d_xy(new_heatmap)
+                new_track = Track(net.embed_crops, SEQ_DT,
+                                  curr_frame, init_pose, images[icam-1], track_id=new_id,
                                   state_shape=STATE_SHAPE, output_shape=SEQ_SHAPE,
                                   person_matching_threshold=0.001,
                                   debug_out_dir=debug_dir)
+                new_track.init_heatmap(new_heatmap)
+                track_lists[icam-1].append(new_track)
 
-                # Embed around the initial pose and compute an initial heatmap.
-                id_heatmap = net.search_person(image_embeddings[icam-1], new_track.embedding)
-                id_heatmap = net.fix_shape(id_heatmap, images[icam-1].shape, STATE_SHAPE, fill_value=0)
-                new_track.init_heatmap(id_heatmap)
-                track_id += 1
-                track_list.append(new_track)
+            # B.2) REAL NEWS
+            # TODO: Missing non-max suppression
+            # for y_idx, x_idx in zip(*np.where(personness>1.5)):
+            #     init_pose = [y_idx, x_idx]
+            #     new_track = Track(net.embed_crop, SEQ_DT,
+            #                       curr_frame, init_pose, images[icam-1], track_id=track_id,
+            #                       state_shape=STATE_SHAPE, output_shape=SEQ_SHAPE,
+            #                       person_matching_threshold=0.001,
+            #                       debug_out_dir=debug_dir)
+
+            #     # Embed around the initial pose and compute an initial heatmap.
+            #     id_heatmap = net.search_person(image_embeddings[icam-1], new_track.embedding)
+            #     id_heatmap = net.fix_shape(id_heatmap, images[icam-1].shape, STATE_SHAPE, fill_value=0)
+            #     new_track.init_heatmap(id_heatmap)
+            #     track_id += 1
+            #     track_list.append(new_track)
 
         ### C) further track-management
         # delete tracks marked as 'deleted' in this tracking cycle #TODO: manage in other list for re-id
@@ -153,13 +152,12 @@ def main(net, args):
                     ax.imshow(curr_image)
 
                 # plot (active) tracks
-                raw_personness = net.fix_shape(image_personnesses[icam-1], images[icam - 1].shape, STATE_SHAPE, fill_value=0)
-                print(raw_personness)
-                ax_tl.imshow(raw_personness, interpolation='bicubic', cmap='hot', alpha=0.5, clim=(0, 1),
-                         extent=[0, SEQ_SHAPE[1], SEQ_SHAPE[0], 0])
+                #raw_personness = net.fix_shape(image_personnesses[icam-1], images[icam - 1].shape, STATE_SHAPE, fill_value=0)
+                #ax_tl.imshow(raw_personness, interpolation='bicubic', cmap='hot', alpha=0.5, clim=(0, 1),
+                #         extent=[0, SEQ_SHAPE[1], SEQ_SHAPE[0], 0])
                 ax_tl.set_title('Raw Personness')
-                ax_tr.imshow(viz_per_cam_personnesses[icam-1], interpolation='bicubic', cmap='hot', alpha=0.5, clim=(0, 1),
-                         extent=[0, SEQ_SHAPE[1], SEQ_SHAPE[0], 0])
+                #ax_tr.imshow(viz_per_cam_personnesses[icam-1], interpolation='bicubic', cmap='hot', alpha=0.5, clim=(0, 1),
+                #         extent=[0, SEQ_SHAPE[1], SEQ_SHAPE[0], 0])
                 ax_tr.set_title('Filtered Personness')
                 ax_ml.set_title('Prior')
                 ax_mr.set_title('All ID-specific')
@@ -244,12 +242,12 @@ if __name__ == '__main__':
     if args.model == 'fake':
         net = FakeNeuralNewsNetwork(lib.load_trainval(pjoin(args.basedir, 'ground_truth', 'trainval.mat'), time_range=[args.t0, args.t1]))
     else:
-        net = RealNews(
-        #net = SemiFakeNews(
+        #net = RealNews(
+        net = SemiFakeNews(
             model=args.model,
             weights=args.weights,
-            scale_factor=0.5,
-            #fake_dets=lib.load_trainval(pjoin(args.basedir, 'ground_truth', 'trainval.mat'), time_range=[args.t0, args.t1])
+            input_scale_factor=0.5,
+            fake_dets=lib.load_trainval(pjoin(args.basedir, 'ground_truth', 'trainval.mat'), time_range=[args.t0, args.t1])
         )
 
     # Prepare output dirs
