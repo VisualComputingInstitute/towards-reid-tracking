@@ -78,11 +78,14 @@ def main(net, args):
 
 
         ### B) get new tracks from general heatmap
+        viz_per_cam_personnesses = []
         for icam in range(1, 8 + 1):
             net.fake_camera(icam)
 
             known_embs = [track.embedding for track in track_lists[icam-1]]
-            personness = net.clear_known(image_personnesses[icam-1], image_embeddings[icam-1], known_embs=known_embs)
+            personness = net.clear_known(image_personnesses[icam - 1], image_embeddings[icam - 1], known_embs=known_embs)
+            personness = net.fix_shape(personness, images[icam - 1].shape, STATE_SHAPE, fill_value=0)
+            viz_per_cam_personnesses.append(personness)
 
             # B.1) COMMENT IN FOR SEMI-FAKE
             # TODO: ID management (duke)
@@ -101,7 +104,7 @@ def main(net, args):
 
             # B.2) REAL NEWS
             # TODO: Missing non-max suppression
-            for y_idx, x_idx in zip(*np.where(personness>0.5)):
+            for y_idx, x_idx in zip(*np.where(personness>1.5)):
                 init_pose = [y_idx, x_idx]
                 new_track = Track(net.embed_crop, SEQ_DT,
                                   curr_frame, init_pose, images[icam-1], track_id=track_id,
@@ -138,8 +141,8 @@ def main(net, args):
                 #ig = ImageGrid(fig, 111, nrows_ncols=(2,2))
                 #axes = ig.axes_all
                 #(ax_tl, ax_tr), (ax_bl, ax_br) = ig.axes_row
-                fig, axes = plt.subplots(2, 2, sharex=True, sharey=True, figsize=(20,12))
-                (ax_tl, ax_tr), (ax_bl, ax_br) = axes
+                fig, axes = plt.subplots(3, 2, sharex=True, sharey=True, figsize=(20,12))
+                (ax_tl, ax_tr), (ax_ml, ax_mr), (ax_bl, ax_br) = axes
                 axes = axes.flatten()
                 #fig, ax = plt.subplots(1,1)
                 #axes = [ax]
@@ -150,19 +153,27 @@ def main(net, args):
                     ax.imshow(curr_image)
 
                 # plot (active) tracks
+                raw_personness = net.fix_shape(image_personnesses[icam-1], images[icam - 1].shape, STATE_SHAPE, fill_value=0)
+                print(raw_personness)
+                ax_tl.imshow(raw_personness, interpolation='bicubic', cmap='hot', alpha=0.5, clim=(0, 1),
+                         extent=[0, SEQ_SHAPE[1], SEQ_SHAPE[0], 0])
+                ax_tl.set_title('Raw Personness')
+                ax_tr.imshow(viz_per_cam_personnesses[icam-1], interpolation='bicubic', cmap='hot', alpha=0.5, clim=(0, 1),
+                         extent=[0, SEQ_SHAPE[1], SEQ_SHAPE[0], 0])
+                ax_tr.set_title('Filtered Personness')
+                ax_ml.set_title('Prior')
+                ax_mr.set_title('All ID-specific')
+                ax_bl.set_title('Posterior')
+                ax_br.set_title('All Tracks')
                 for each_tracker in track_list:
                     #if(each_tracker.track_id==3):
                     if hasattr(each_tracker, 'pred_heatmap'):  # HACK because first don't have.
-                        each_tracker.plot_pred_heatmap(ax_tl)
-                    ax_tl.set_title('Prior')
+                        each_tracker.plot_pred_heatmap(ax_ml)
                     if hasattr(each_tracker, 'id_heatmap'):  # HACK because first don't have.
-                        each_tracker.plot_id_heatmap(ax_tr)
-                    ax_tr.set_title('All ID-specific')
+                        each_tracker.plot_id_heatmap(ax_mr)
                     each_tracker.plot_pos_heatmap(ax_bl)
-                    ax_bl.set_title('Posterior')
                     #each_tracker.plot_track(ax_br, plot_past_trajectory=True, output_shape=(1080//2, 1920//2))
                     each_tracker.plot_track(ax_br, plot_past_trajectory=True)
-                    ax_br.set_title('All Tracks')
                     #plt.gca().add_patch(patches.Rectangle((each_tracker.KF.x[0]-50, each_tracker.KF.x[2]-200),
                     #                                        100, 200, fill=False, linewidth=3, edgecolor=each_tracker.color))
 
