@@ -40,7 +40,7 @@ class Track(object):
     """
 
     def __init__(self, dt, curr_frame, init_pose, track_dim=4, det_dim=2, track_id=-1,
-                 debug_out_dir=None, init_thresh=3, delete_thresh=5,):
+                 embedding=None, debug_out_dir=None, init_thresh=3, delete_thresh=5,):
         self.debug_out_dir = debug_out_dir
 
         init_x = [init_pose[0], 0.0, init_pose[1], 0.0]
@@ -82,6 +82,9 @@ class Track(object):
             self.status='init'
 
         self.poses=[init_pose]
+
+        #only if ReID is used for DA
+        self.embedding = embedding
 
     # ==Track state==
     def track_predict(self):

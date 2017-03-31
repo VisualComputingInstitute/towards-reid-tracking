@@ -401,6 +401,10 @@ def box_center_xy(box):
     return [box[0] + box[2] / 2., box[1] + box[3] / 2.]
 
 
+def ltrb_to_box(ltrb):
+    l, t, r, b = ltrb[0], ltrb[1], ltrb[2], ltrb[3]
+    return [l, t, r-l, b-t]
+
 ###############################################################################
 # Frame-switching
 

@@ -12,7 +12,7 @@ from fakenews import FakeNeuralNewsNetwork
 
 
 class SemiFakeNews:
-    def __init__(self, model, weights, input_scale_factor, fake_dets):
+    def __init__(self, model, weights, input_scale_factor, fake_dets, debug_skip_full_image=False):
         self.input_scale_factor = input_scale_factor
 
         mod = import_module('lib.models.' + model)
@@ -36,10 +36,11 @@ class SemiFakeNews:
         print("Precompiling network... 1/2", end='', flush=True)
         out = self.net.forward(np.zeros((1,3) + self.net.in_shape, df.floatX))
         print("\rPrecompiling network... 2/2", end='', flush=True)
-        out = self.net_hires.forward(np.zeros((1,3) + self._scale_input_shape((1080,1920)), df.floatX))
+        if not debug_skip_full_image:
+            out = self.net_hires.forward(np.zeros((1,3) + self._scale_input_shape((1080,1920)), df.floatX))
         print(" Done", flush=True)
 
-        self.fake = FakeNeuralNewsNetwork(fake_dets, fake_shape=out.shape[2:])
+        self.fake = FakeNeuralNewsNetwork(fake_dets, fake_shape=out.shape[2:]) if fake_dets is not None else None
 
 
     def _scale_input_shape(self, shape):
@@ -48,12 +49,14 @@ class SemiFakeNews:
 
     # Only for fake
     def tick(self, *a, **kw):
-        self.fake.tick(*a, **kw)
+        if self.fake is not None:
+            self.fake.tick(*a, **kw)
 
 
     # Only for fake
     def fake_camera(self, *a, **kw):
-        self.fake.fake_camera(*a, **kw)
+        if self.fake is not None:
+            self.fake.fake_camera(*a, **kw)
 
 
     def embed_crops(self, crops, *fakea, **fakekw):
@@ -100,4 +103,5 @@ class SemiFakeNews:
     # THIS IS THE ONLY THING FAKE :(
     # TODO: Make semi-fake, by clearing out known_embs.
     def personness(self, image, known_embs):
+        assert self.fake is not None, "The world doesn't work that way my friend!"
         return self.fake.personness(image, known_embs)

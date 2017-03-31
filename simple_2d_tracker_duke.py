@@ -26,14 +26,15 @@ from simple_track_duke import Track
 import h5py
 from scipy.spatial.distance import euclidean,mahalanobis
 from munkres import Munkres, print_matrix
+from semifake import SemiFakeNews
 
 SEQ_FPS = 60.0
 SEQ_DT = 1./SEQ_FPS
 SEQ_SHAPE = (1080, 1920)
 STATE_SHAPE = (270, 480)
 HOT_CMAP = lib.get_transparent_colormap()
-NUM_CAMS = 8 # which cam to consider (from 1 to NUM_CAMS), max: 8
-
+NUM_CAMS = 2 # which cam to consider (from 1 to NUM_CAMS), max: 8
+SCALE_FACTOR = 0.5
 
 
 g_frames = 0  # Global counter for correct FPS in all cases
@@ -54,8 +55,20 @@ def shall_vis(args, curr_frame):
     return args.vis and (curr_frame - args.t0) % args.vis == 0
 
 
+def embed_crops_at(net, image, xys, debug_out_dir=None, debug_cam=None, debug_curr_frame=None):
+    H, W, _ = image.shape
+    crops = [lib.cutout_abs_hwc(image, lib.box_centered(xy[0]*SCALE_FACTOR, xy[1]*SCALE_FACTOR,
+                                                        h=128*2*SCALE_FACTOR, w=48*2*SCALE_FACTOR, bounds=(0, 0, W, H))) for xy in xys]
+
+    if debug_out_dir is not None:
+        for icrop, crop in enumerate(crops):
+            lib.imwrite(pjoin(debug_out_dir, 'crops', 'cam{}-frame{}-{}.jpg'.format(debug_cam, debug_curr_frame, icrop)), crop)
+
+    return net.embed_crops(crops)
+
+
 #@profile
-def main(args):
+def main(net, args):
     eval_path = pjoin(args.outdir, 'results/run_{:%Y-%m-%d_%H:%M:%S}.txt'.format(datetime.datetime.now()))
     if args.debug:
         debug_dir = pjoin(args.outdir, 'debug/run_{:%Y-%m-%d_%H:%M:%S}'.format(datetime.datetime.now()))
@@ -78,13 +91,12 @@ def main(args):
     for curr_frame in range(args.t0, args.t1+1):
         print("\rFrame {}, {} matched/missed/init/total tracks, {} total seen".format(curr_frame, ', '.join(map(n_active_tracks, track_lists)), sum(map(len, track_lists))), end='', flush=True)
 
-        if shall_vis(args, curr_frame):
+        if args.use_appearance or shall_vis(args, curr_frame):
+            # ATTENTION if changing this, don't forget to adapt SCALE_FACTOR
             images = [plt.imread(pjoin(args.basedir, 'frames-0.5/camera{}/{}.jpg'.format(icam, lib.glob2loc(curr_frame, icam)))) for icam in range(1,NUM_CAMS+1)]
 
 
         for icam in range(1, NUM_CAMS+1):
-            dist_matrix = []
-
             curr_dets_idc = np.where(det_lists[icam-1][:,1] == lib.glob2loc(curr_frame, icam))[0]
             curr_dets = det_lists[icam-1][curr_dets_idc]
             curr_dets = curr_dets[curr_dets[:,-1] > DET_CONTINUE_THRESH]
@@ -121,73 +133,83 @@ def main(args):
                                                       fill=False, linewidth=2.0, edgecolor="blue"))
             # ===/visualization===
 
+            # ---PREDICT---
+            for track in track_lists[icam-1]:
+                track.track_predict()
 
             num_curr_dets = len(curr_dets)
-            for each_tracker in track_lists[icam-1]:
-                # ---PREDICT---
-                each_tracker.track_predict()
+            if num_curr_dets > 0 and len(track_lists[icam-1]) > 0:
+                if args.use_appearance:
+                    track_embs = np.array([track.embedding for track in track_lists[icam-1]])
+                    det_xys = [lib.box_center_xy(lib.ltrb_to_box(det[2:])) for det in curr_dets]
+                    det_embs = embed_crops_at(net, images[icam-1], det_xys,
+                                              debug_out_dir=debug_dir, debug_cam=icam, debug_curr_frame=curr_frame)
+                    dist_matrix = net.embeddings_cdist(track_embs, det_embs)
+                    #print("dists: {} | {} | {} | {} | {}".format(*np.percentile(dist_matrix.flatten(), [0, 50, 95, 99, 100])))
+                    #dist_matrix[dist_matrix > DIST_THRESH] = 999999
+                else:
+                    dist_matrix = np.zeros((len(track_lists[icam-1]), num_curr_dets))
 
-                # no detections? no distance matrix
-                if not num_curr_dets:
-                    break
+                    for itrack, track in enumerate(track_lists[icam-1]):
+                        # ---BUILD DISTANCE MATRIX---
+                        #  TODO: IoU (outsource distance measure)
+                        #              #dist_matrix = [euclidean(tracker.x[0::2],curr_dets[i][2:4]) for i in range(len(curr_dets))]
+                        #inv_P = inv(each_tracker.KF.P[::2,::2])
+                        dist_matrix[itrack] = [euclidean(track.KF.x[::2], lib.box_center_xy(lib.ltrb_to_box(det[2:]))) for det in curr_dets]
+                        #              #dist_matrix_line = np.array([mahalanobis(each_tracker.KF.x[::2],
+                        #                                (curr_dets[i][2]+curr_dets[i][4]/2.,
+                        #                                 curr_dets[i][3]+curr_dets[i][5]/2.),
+                        #                                inv_P) for i in range(len(curr_dets))])
+                        #  apply the threshold here (munkres apparently can't deal 100% with inf, so use 999999)
+                        #              dist_matrix_line[np.where(dist_matrix_line>dist_thresh)] = 999999
+                        #              dist_matrix.append(dist_matrix_line.tolist())
+                    dist_matrix[dist_matrix > DIST_THRESH] = 999999
 
-                # ---BUILD DISTANCE MATRIX---
-                #  TODO: IoU (outsource distance measure)
-                #              #dist_matrix = [euclidean(tracker.x[0::2],curr_dets[i][2:4]) for i in range(len(curr_dets))]
-                #inv_P = inv(each_tracker.KF.P[::2,::2])
-                dist_matrix_line = np.array([euclidean(each_tracker.KF.x[::2],
-                                            (curr_dets[i][2] + (curr_dets[i][4] - curr_dets[i][2]) / 2.,
-                                             curr_dets[i][3] + (curr_dets[i][5] - curr_dets[i][3]) / 2.)) for i in range(len(curr_dets))])
-                #              #dist_matrix_line = np.array([mahalanobis(each_tracker.KF.x[::2],
-                #                                (curr_dets[i][2]+curr_dets[i][4]/2.,
-                #                                 curr_dets[i][3]+curr_dets[i][5]/2.),
-                #                                inv_P) for i in range(len(curr_dets))])
-                #  apply the threshold here (munkres apparently can't deal 100% with inf, so use 999999)
-                #              dist_matrix_line[np.where(dist_matrix_line>dist_thresh)] = 999999
-                #              dist_matrix.append(dist_matrix_line.tolist())
-                dist_matrix_line[np.where(dist_matrix_line > DIST_THRESH)] = 999999
-                dist_matrix.append(dist_matrix_line.tolist())
+                # Do the Munkres! (Hungarian algo) to find best matching tracks<->dets
+                # at first, all detections (if any) are unassigend
+                unassigned_dets = set(range(num_curr_dets))
 
-            # Do the Munkres! (Hungarian algo) to find best matching tracks<->dets
-            # at first, all detections (if any) are unassigend
-            unassigned_dets = set(range(num_curr_dets))
-            if len(dist_matrix) != 0:
-                nn_indexes = m.compute(dist_matrix)
+                nn_indexes = m.compute(dist_matrix.tolist())
                 # perform update step for each match (check for threshold, to see, if it's actually a miss)
                 for nn_match_idx in range(len(nn_indexes)):
                     # ---UPDATE---
                     if (dist_matrix[nn_indexes[nn_match_idx][0]][nn_indexes[nn_match_idx][1]] <= DIST_THRESH):
                         nn_det = curr_dets[nn_indexes[nn_match_idx][1]]  # 1st: track_idx, 2nd: 0=track_idx, 1 det_idx
-                        track_lists[icam-1][nn_indexes[nn_match_idx][0]].track_update([nn_det[2] + (nn_det[4] - nn_det[2]) / 2., nn_det[3] + (nn_det[5] - nn_det[3])/2.])
+                        track_lists[icam-1][nn_indexes[nn_match_idx][0]].track_update(lib.box_center_xy(lib.ltrb_to_box(nn_det[2:])))
                         track_lists[icam-1][nn_indexes[nn_match_idx][0]].track_is_matched(curr_frame)
                         # remove detection from being unassigend
                         unassigned_dets.remove(nn_indexes[nn_match_idx][1])
                     else:
                         track_lists[icam-1][nn_indexes[nn_match_idx][0]].track_is_missed(curr_frame)
+
                 # set tracks without any match to miss
                 for miss_idx in list(set(range(len(track_lists[icam-1]))) - set([i[0] for i in nn_indexes])):
                     track_lists[icam-1][miss_idx].track_is_missed(curr_frame)
 
+            else:  # No dets => all missed
+                for track in track_lists[icam-1]:
+                    track.track_is_missed(curr_frame)
 
 
             if not args.gt_init:
                 ### B) 1: get new tracks from unassigned detections
                 for unassigend_det_idx in unassigned_dets:
                     if curr_dets[unassigend_det_idx][-1] > DET_INIT_THRESH:
-                        init_pose = [curr_dets[unassigend_det_idx][2] + (curr_dets[unassigend_det_idx][4] - curr_dets[unassigend_det_idx][2]) / 2.,
-                                     curr_dets[unassigend_det_idx][3] + (curr_dets[unassigend_det_idx][5] - curr_dets[unassigend_det_idx][3]) / 2.]
-                        new_track = Track(SEQ_DT, curr_frame, init_pose, track_id=track_id)
+                        init_pose = lib.box_center_xy(lib.ltrb_to_box(curr_dets[unassigend_det_idx][2:]))
+                        new_track = Track(SEQ_DT, curr_frame, init_pose, track_id=track_id,
+                                          embedding=embed_crops_at(net, images[icam-1], [init_pose])[0] if args.use_appearance else None)
                         track_id = track_id + 1
                         track_lists[icam-1].append(new_track)
             else:
                 ### B) 2: new tracks from (unassigend) ground truth
-                for tid,box in zip(curr_gts['TIDs'],curr_gts['boxes']):
+                for tid, box in zip(curr_gts['TIDs'],curr_gts['boxes']):
                     if tid in already_tracked_gids[icam-1]:
                         continue
-                    # l t w h
                     abs_box = lib.box_rel2abs(box)
-                    new_track = Track(SEQ_DT, curr_frame, lib.box_center_xy(abs_box), track_id=tid,
-                                      init_thresh=3,delete_thresh=5)
+                    init_pose = lib.box_center_xy(abs_box)
+                    new_track = Track(SEQ_DT, curr_frame, init_pose, track_id=tid,
+                                      embedding=embed_crops_at(net, images[icam-1], [init_pose])[0] if args.use_appearance else None,
+                                      init_thresh=1,delete_thresh=120)
                     track_lists[icam - 1].append(new_track)
                     already_tracked_gids[icam-1].append(tid)
 
@@ -314,10 +336,11 @@ if __name__ == '__main__':
                         help='Path to `train` folder of 2DMOT2015.')
     parser.add_argument('--outdir', nargs='?', default='/work/breuers/dukeMTMC/results/',
                         help='Where to store generated output. Only needed if `--vis` is also passed.')
-    parser.add_argument('--model', default='lunet2',
+    parser.add_argument('--use_appearance', action='store_true',
+                        help='Whether or not to use the deep net as appearance model.')
+    parser.add_argument('--model', default='lunet2c',
                         help='Name of the model to load. Corresponds to module names in lib/models. Or `fake`')
-    #parser.add_argument('--weights', default='/work/breuers/dukeMTMC/models/lunet2-final.pkl',
-    parser.add_argument('--weights', default='/work/breuers/dukeMTMC/models/lunet2-combined-024000.pkl',
+    parser.add_argument('--weights', default='/work/breuers/dukeMTMC/models/lunet2c-final.pkl',
                         help='Name of the weights to load for the model (path to .pkl file).')
     parser.add_argument('--t0', default=49700, type=int,
                         help='Time of first frame.')
@@ -332,6 +355,12 @@ if __name__ == '__main__':
     args = parser.parse_args()
     print(args)
 
+    # This is all for faking the network.
+    net = SemiFakeNews(model=args.model, weights=args.weights,
+                       input_scale_factor=1.0 if SCALE_FACTOR==0.5 else 0.5,  # ASK LUCAS
+                       debug_skip_full_image=True,  # Goes with the above.
+                       fake_dets=None) if args.use_appearance else None
+
     # Prepare output dirs
     for icam in range(1, NUM_CAMS+1):
         makedirs(pjoin(args.outdir, 'camera{}'.format(icam)), exist_ok=True)
@@ -339,7 +368,7 @@ if __name__ == '__main__':
 
     tstart = time.time()
     try:
-        main(args)
+        main(net, args)
     except KeyboardInterrupt:
         print()
 
