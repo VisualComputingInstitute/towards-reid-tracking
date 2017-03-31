@@ -2,8 +2,8 @@ import DeepFried2 as df
 from .. import dfext
 
 
-def mknet():
-    kw = dict()
+def mknet(mkbn=lambda chan: df.BatchNormalization(chan, 0.95)):
+    kw = dict(mkbn=mkbn)
 
     net = df.Sequential(
         # -> 128x48
@@ -28,7 +28,7 @@ def mknet():
 
         # Eq. to flatten + linear
         df.SpatialConvolutionCUDNN(128, 256, (4,1), bias=None),
-        df.BatchNormalization(256, 0.95), df.ReLU(),
+        mkbn(256), df.ReLU(),
 
         df.StoreOut(df.SpatialConvolutionCUDNN(256, 128, (1,1)))
     )
@@ -48,7 +48,7 @@ def add_piou(lunet2):
     newnet.add(df.RepeatInput(newnet.emb_mod, newnet.iou_mod))
 
     newnet.embs_from_out = lambda out: out[0]
-    newnet.ious_from_out = lambda out: out[1][0]  # Also remove the first size-1 dimension.
+    newnet.ious_from_out = lambda out: out[1][:,0]  # Also remove the first size-1 dimension.
 
     newnet.in_shape = lunet2.in_shape
     newnet.scale_factor = lunet2.scale_factor
