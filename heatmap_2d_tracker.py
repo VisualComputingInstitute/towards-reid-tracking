@@ -225,9 +225,9 @@ if __name__ == '__main__':
                         help='Name of the model to load. Corresponds to module names in lib/models. Or `fake`')
     parser.add_argument('--weights', default='/work/breuers/dukeMTMC/models/lunet2-final.pkl',
                         help='Name of the weights to load for the model (path to .pkl file).')
-    parser.add_argument('--t0', default=49700,
+    parser.add_argument('--t0', default=49700, type=int,
                         help='Time of first frame.')
-    parser.add_argument('--t1', default=227540,
+    parser.add_argument('--t1', default=227540, type=int,
                         help='Time of last frame, inclusive.')
     parser.add_argument('--large_gpu', action='store_true',
                         help='Large GPU can forward more at once.')
