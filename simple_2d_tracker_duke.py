@@ -33,13 +33,11 @@ SEQ_DT = 1./SEQ_FPS
 SEQ_SHAPE = (1080, 1920)
 STATE_SHAPE = (270, 480)
 HOT_CMAP = lib.get_transparent_colormap()
-NUM_CAMS = 2 # which cam to consider (from 1 to NUM_CAMS), max: 8
+NUM_CAMS = 8 # which cam to consider (from 1 to NUM_CAMS), max: 8
 SCALE_FACTOR = 0.5
 
 
 g_frames = 0  # Global counter for correct FPS in all cases
-
-from collections import Counter
 
 def n_active_tracks(tracklist):
     return '{:2d} +{:2d} +{:2d} ={:2d}'.format(
@@ -48,6 +46,7 @@ def n_active_tracks(tracklist):
         sum(t.status == 'init' for t in tracklist),
         len(tracklist),
     )
+    # from collections import Counter
     #return str(Counter(t.status for t in tracklist).most_common())
 
 
@@ -81,9 +80,9 @@ def main(net, args):
     track_id = 1
     det_lists = read_detections()
     gt_list = load_trainval(pjoin(args.basedir, 'ground_truth/trainval.mat'),time_range=[127720, 187540]) #train_val_mini
-    DIST_THRESH = 200
+    DIST_THRESH = 7 if args.use_appearance else 200 #7 for ReID embeddings, 200 for euclidean pixel distance
     DET_INIT_THRESH = 0.3
-    DET_CONTINUE_THRESH = 0.0
+    DET_CONTINUE_THRESH = -0.3
     m = Munkres()
 
     # ===Tracking fun begins: iterate over frames===
@@ -92,8 +91,8 @@ def main(net, args):
         print("\rFrame {}, {} matched/missed/init/total tracks, {} total seen".format(curr_frame, ', '.join(map(n_active_tracks, track_lists)), sum(map(len, track_lists))), end='', flush=True)
 
         if args.use_appearance or shall_vis(args, curr_frame):
-            # ATTENTION if changing this, don't forget to adapt SCALE_FACTOR
-            images = [plt.imread(pjoin(args.basedir, 'frames-0.5/camera{}/{}.jpg'.format(icam, lib.glob2loc(curr_frame, icam)))) for icam in range(1,NUM_CAMS+1)]
+            framedir = 'frames-0.5' if SCALE_FACTOR == 0.5 else 'frames'
+            images = [plt.imread(pjoin(args.basedir, framedir, 'camera{}/{}.jpg'.format(icam, lib.glob2loc(curr_frame, icam)))) for icam in range(1,NUM_CAMS+1)]
 
 
         for icam in range(1, NUM_CAMS+1):
@@ -145,7 +144,9 @@ def main(net, args):
                     det_embs = embed_crops_at(net, images[icam-1], det_xys,
                                               debug_out_dir=debug_dir, debug_cam=icam, debug_curr_frame=curr_frame)
                     dist_matrix = net.embeddings_cdist(track_embs, det_embs)
-                    #print("dists: {} | {} | {} | {} | {}".format(*np.percentile(dist_matrix.flatten(), [0, 50, 95, 99, 100])))
+                    #print()
+                    #print("dists-pct: {} | {} | {}".format(*np.percentile(dist_matrix.flatten(), [0, 50, 100])))
+                    #print("dists-top: " + " | ".join(map(str, np.sort(dist_matrix, axis=None)[:5])))
                     #dist_matrix[dist_matrix > DIST_THRESH] = 999999
                 else:
                     dist_matrix = np.zeros((len(track_lists[icam-1]), num_curr_dets))
@@ -209,7 +210,7 @@ def main(net, args):
                     init_pose = lib.box_center_xy(abs_box)
                     new_track = Track(SEQ_DT, curr_frame, init_pose, track_id=tid,
                                       embedding=embed_crops_at(net, images[icam-1], [init_pose])[0] if args.use_appearance else None,
-                                      init_thresh=1,delete_thresh=120)
+                                      init_thresh=1,delete_thresh=90)
                     track_lists[icam - 1].append(new_track)
                     already_tracked_gids[icam-1].append(tid)
 
@@ -342,9 +343,9 @@ if __name__ == '__main__':
                         help='Name of the model to load. Corresponds to module names in lib/models. Or `fake`')
     parser.add_argument('--weights', default='/work/breuers/dukeMTMC/models/lunet2c-final.pkl',
                         help='Name of the weights to load for the model (path to .pkl file).')
-    parser.add_argument('--t0', default=49700, type=int,
+    parser.add_argument('--t0', default=127720, type=int,
                         help='Time of first frame.')
-    parser.add_argument('--t1', default=227540, type=int,
+    parser.add_argument('--t1', default=187540, type=int,
                         help='Time of last frame, inclusive.')
     parser.add_argument('--vis', default=0, type=int,
                         help='Generate and save visualization of the results, every X frame.')
