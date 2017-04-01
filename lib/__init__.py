@@ -51,6 +51,18 @@ def softmin(x, T=1):
     return softmax(-x, T=T)
 
 
+def entropy(x):
+    return -np.sum(x*np.log(np.clip(x, 1e-5, 1)))
+
+
+def entropy_score(x):
+    """ Returns a score between 0 and 1 directly proportional to the entropy.
+        It is exactly 0 for (near) uniform distributions, and 1 for single peaks.
+    """
+    e0 = entropy(np.zeros_like(x))
+    return (e0 - entropy(x))/e0
+
+
 def my_choice(candidates, n):
     return np.random.choice(candidates, n, len(candidates) < n)
 
@@ -173,6 +185,13 @@ try:
         return resize_img(img, shape, interp)
 
 
+    def imread(fname):
+        f = cv2.imread(fname)
+        if f is None:
+            raise ValueError("Couldn't load file {}".format(fname))
+        return f[:,:,::-1]
+
+
     def imwrite(fname, img):
         cv2.imwrite(fname, img[:,:,::-1])
 
@@ -291,6 +310,8 @@ def iou(box1, box2):
 
 
 def max_iou(r, others):
+    if len(others) == 0:
+        return 0
     return max(iou(r, o) for o in others)
 
 
