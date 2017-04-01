@@ -80,16 +80,18 @@ def main(net, args):
             # ===visualization===
             # First, plot what data we have before doing anything.
             if shall_vis(args, curr_frame):
-                fig, axes = plt.subplots(3, 2, sharex=True, sharey=True, figsize=(20,12))
-                (ax_tl, ax_tr), (ax_ml, ax_mr), (ax_bl, ax_br) = axes
+                #fig, axes = plt.subplots(3, 2, sharex=True, sharey=True, figsize=(20,12))
+                #(ax_tl, ax_tr), (ax_ml, ax_mr), (ax_bl, ax_br) = axes
+                fig, axes = plt.subplots(2, 2, sharex=True, sharey=True, figsize=(20,12))
+                (ax_ml, ax_mr), (ax_bl, ax_br) = axes
                 axes = axes.flatten()
 
                 for ax in axes:
-                    ax.imshow(images[icam-1], extent=[0, 1920, 1080, 0])
+                    ax.imshow(images[icam-1], extent=[0, SEQ_SHAPE[1], SEQ_SHAPE[0], 0])
 
                 # plot (active) tracks
-                ax_tl.set_title('Raw Personness')
-                ax_tr.set_title('Filtered Personness')
+                #ax_tl.set_title('Raw Personness')
+                #ax_tr.set_title('Filtered Personness')
                 ax_ml.set_title('Prior')
                 ax_mr.set_title('All ID-specific')
                 ax_bl.set_title('Posterior')
@@ -157,14 +159,15 @@ def main(net, args):
             #     track_list.append(new_track)
 
             if shall_vis(args, curr_frame):
-                track.plot_pos_heatmap(ax_bl)
-                track.plot_track(ax_br, plot_past_trajectory=True)
+                for track in track_list:
+                    track.plot_pos_heatmap(ax_bl)
+                    track.plot_track(ax_br, plot_past_trajectory=True)
 
                 for ax in axes:
                     # TODO: Flex
                     ax.set_adjustable('box-forced')
-                    ax.set_xlim(0, 1920)
-                    ax.set_ylim(1080, 0)
+                    ax.set_xlim(0, SEQ_SHAPE[1])
+                    ax.set_ylim(SEQ_SHAPE[0], 0)
                     fig.savefig(pjoin(args.outdir, 'camera{}/res_img_{:06d}.jpg'.format(icam, curr_frame)),
                                 quality=80, bbox_inches='tight', pad_inches=0.2)
                     plt.close()
@@ -217,9 +220,9 @@ if __name__ == '__main__':
                         help='Name of the model to load. Corresponds to module names in lib/models. Or `fake`')
     parser.add_argument('--weights', default='/work/breuers/dukeMTMC/models/lunet2-final.pkl',
                         help='Name of the weights to load for the model (path to .pkl file).')
-    parser.add_argument('--t0', default=49700, type=int,
+    parser.add_argument('--t0', default=127720, type=int,
                         help='Time of first frame.')
-    parser.add_argument('--t1', default=227540, type=int,
+    parser.add_argument('--t1', default=187540, type=int,
                         help='Time of last frame, inclusive.')
     parser.add_argument('--large_gpu', action='store_true',
                         help='Large GPU can forward more at once.')
