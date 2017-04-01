@@ -124,9 +124,10 @@ class Track(object):
             self.embedding = new_embedding
             self.n_embs_seen = 1
         else:
-            self.embedding = self.embedding*self.n_embs_seen + new_embedding
-            self.n_embs_seen += 1
-            self.embedding /= self.n_embs_seen
+            return  # For this paper, we ignore new embeddings as the first is almost perfect.
+            #self.embedding = self.embedding*self.n_embs_seen + new_embedding
+            #self.n_embs_seen += 1
+            #self.embedding /= self.n_embs_seen
 
     # ==Track state==
     def state_to_output(self, x, y, output_shape=None):
