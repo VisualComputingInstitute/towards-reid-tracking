@@ -115,14 +115,6 @@ def gauss2d(cov, nstd=2):
     return filter / np.sum(filter)  # Make sure it's a probability-preserving
 
 
-def convolve_edge_same(image, filter):
-    pad_width = int(filter.shape[1] / 2)
-    pad_height = int(filter.shape[0] / 2)
-    out_img = np.pad(image, ((pad_height, pad_height), (pad_width, pad_width)), mode='edge')
-    out_img = signal.convolve2d(out_img, filter, mode='valid', boundary='fill', fillvalue=0)
-    return out_img
-
-
 def paste_into_middle_2d(x, out_shape, fill_value=0):
     if x.shape == out_shape:
         return np.array(x)
@@ -173,6 +165,11 @@ try:
 
     def imwrite(fname, img):
         cv2.imwrite(fname, img[:,:,::-1])
+
+
+    def convolve_edge_same(image, filt):
+        # 64F is actually faster than 32?!
+        return cv2.filter2D(image, cv2.CV_64F, filt, borderType=cv2.BORDER_REPLICATE)
 
 
     def video_or_open(video):
@@ -244,6 +241,14 @@ except ImportError:
 
     def imwrite(fname, img):
         scipy.misc.imsave(fname, img)
+
+
+    def convolve_edge_same(image, filt):
+        pad_width = int(filt.shape[1] / 2)
+        pad_height = int(filt.shape[0] / 2)
+        out_img = np.pad(image, ((pad_height, pad_height), (pad_width, pad_width)), mode='edge')
+        out_img = signal.convolve2d(out_img, filt, mode='valid', boundary='fill', fillvalue=0)
+        return out_img
 
 
 ###############################################################################
