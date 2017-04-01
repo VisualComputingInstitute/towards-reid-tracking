@@ -50,7 +50,7 @@ class Track(object):
 
         self.track_id = track_id
         self.color = np.random.rand(3)
-        self.hm_colormap = lbplt.linear_map(self.color,(1,1,1))
+        self.hm_colormap = lbplt.linear_map((1,1,1), self.color)
         self.hm_colormap = lib.get_transparent_colormap(self.hm_colormap)
         self.xs=[init_x]
         self.Ps=[init_P]
