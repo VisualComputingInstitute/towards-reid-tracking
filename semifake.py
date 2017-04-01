@@ -12,7 +12,7 @@ from fakenews import FakeNeuralNewsNetwork
 
 
 class SemiFakeNews:
-    def __init__(self, model, weights, input_scale_factor, fake_dets, debug_skip_full_image=False):
+    def __init__(self, model, weights, input_scale_factor, fake_shape, fake_dets, debug_skip_full_image=False):
         self.input_scale_factor = input_scale_factor
 
         mod = import_module('lib.models.' + model)
@@ -34,17 +34,18 @@ class SemiFakeNews:
         self.net_hires.evaluate()
 
         print("Precompiling network... 1/2", end='', flush=True)
-        out = self.net.forward(np.zeros((1,3) + self.net.in_shape, df.floatX))
+        self.net.forward(np.zeros((1,3) + self.net.in_shape, df.floatX))
         print("\rPrecompiling network... 2/2", end='', flush=True)
-        if not debug_skip_full_image:
+        if not (debug_skip_full_image and fake_dets is None):
             out = self.net_hires.forward(np.zeros((1,3) + self._scale_input_shape((1080,1920)), df.floatX))
         print(" Done", flush=True)
 
-        self.fake = FakeNeuralNewsNetwork(fake_dets, fake_shape=out.shape[2:]) if fake_dets is not None else None
+        #fake_shape = out.shape[2:]  # We didn't fake the avg-pool effect yet, so don't!
+        self.fake = FakeNeuralNewsNetwork(fake_dets, fake_shape=fake_shape) if fake_dets is not None else None
 
 
     def _scale_input_shape(self, shape):
-        return (int(shape[0]*self.input_scale_factor), int(shape[1]*self.input_scale_factor))
+        return lib.scale_shape(shape, self.input_scale_factor)
 
 
     # Only for fake

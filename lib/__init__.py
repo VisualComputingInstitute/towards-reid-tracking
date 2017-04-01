@@ -26,6 +26,16 @@ TRAIN_START, TRAIN_END = 49700, 227540
 # Generic utilities
 
 
+def scale_shape(shape, factors):
+    try:
+        len(factors)
+    except TypeError:
+        # It's a number
+        factors = (factors, factors)
+
+    return int(shape[0]*factors[0]), int(shape[1]*factors[1])
+
+
 def argmax2d_xy(arr):
     idx = np.unravel_index(arr.argmax(), arr.shape)
     return [idx[1], idx[0]]

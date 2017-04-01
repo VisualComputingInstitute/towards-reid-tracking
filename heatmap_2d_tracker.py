@@ -128,7 +128,8 @@ def main(net, args):
             for new_heatmap, new_id in net.personness(images[icam-1], known_embs=None):
                 # TODO: get correct track_id (loop heatmap, instead of function call?# )
                 # TODO: get id_heatmap of that guy for init_heatmap
-                new_heatmap = net.fix_shape(new_heatmap, images[icam-1].shape, STATE_SHAPE, fill_value=0)
+                # Don't fix shape yet, cuz we don't emulate the avg-pool shape screw-up.
+                #new_heatmap = net.fix_shape(new_heatmap, images[icam-1].shape, STATE_SHAPE, fill_value=0)
                 init_pose = lib.argmax2d_xy(new_heatmap)
                 new_track = Track(net.embed_crops, SEQ_DT,
                                   curr_frame, init_pose, images[icam-1], track_id=new_id,
@@ -238,7 +239,8 @@ if __name__ == '__main__':
             model=args.model,
             weights=args.weights,
             input_scale_factor=0.5,
-            fake_dets=lib.load_trainval(pjoin(args.basedir, 'ground_truth', 'trainval.mat'), time_range=[args.t0, args.t1])
+            fake_dets=lib.load_trainval(pjoin(args.basedir, 'ground_truth', 'trainval.mat'), time_range=[args.t0, args.t1]),
+            fake_shape=STATE_SHAPE,
         )
 
     # Prepare output dirs
