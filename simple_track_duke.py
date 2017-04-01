@@ -139,7 +139,8 @@ class Track(object):
         w = int(0.4*h)
         l = int(cX-w/2)
         t = int(cY-h/2)
-        return [cid, self.track_id, lib.glob2loc(frame,cid), l, t, w, h, -1, -1]
+        # id-shift-quick-hack for multi-cam eval.
+        return [cid, self.track_id+cid*100000, lib.glob2loc(frame,cid), l, t, w, h, -1, -1]
 
 
     # ==Visualization==

@@ -33,7 +33,7 @@ SEQ_DT = 1./SEQ_FPS
 SEQ_SHAPE = (1080, 1920)
 STATE_SHAPE = (270, 480)
 HOT_CMAP = lib.get_transparent_colormap()
-NUM_CAMS = 8 # which cam to consider (from 1 to NUM_CAMS), max: 8
+#NUM_CAMS = 2 # which cam to consider (from 1 to NUM_CAMS), max: 8
 SCALE_FACTOR = 0.5
 
 
@@ -75,12 +75,15 @@ def main(net, args):
     else:
         debug_dir = None
 
-    track_lists = [[], [], [], [], [], [], [], []]
-    already_tracked_gids = [[], [], [], [], [], [], [], []]
+
+    CAMS = args.cams
+
+    track_lists = [[] for _ in range(len(CAMS))]
+    already_tracked_gids = [[] for _ in range(len(CAMS))]
     track_id = 1
-    det_lists = read_detections()
+    det_lists = read_detections(CAMS)
     gt_list = load_trainval(pjoin(args.basedir, 'ground_truth/trainval.mat'),time_range=[127720, 187540]) #train_val_mini
-    DIST_THRESH = 7 if args.use_appearance else 200 #7 for ReID embeddings, 200 for euclidean pixel distance
+    DIST_THRESH = 5 if args.use_appearance else 200 #7 for ReID embeddings, 200 for euclidean pixel distance
     DET_INIT_THRESH = 0.3
     DET_CONTINUE_THRESH = -0.3
     m = Munkres()
@@ -90,14 +93,12 @@ def main(net, args):
     for curr_frame in range(args.t0, args.t1+1):
         print("\rFrame {}, {} matched/missed/init/total tracks, {} total seen".format(curr_frame, ', '.join(map(n_active_tracks, track_lists)), sum(map(len, track_lists))), end='', flush=True)
 
-        if args.use_appearance or shall_vis(args, curr_frame):
-            framedir = 'frames-0.5' if SCALE_FACTOR == 0.5 else 'frames'
-            images = [plt.imread(pjoin(args.basedir, framedir, 'camera{}/{}.jpg'.format(icam, lib.glob2loc(curr_frame, icam)))) for icam in range(1,NUM_CAMS+1)]
+        for icam, det_list, track_list, already_tracked in zip(CAMS, det_lists, track_lists, already_tracked_gids):
+            if args.use_appearance or shall_vis(args, curr_frame):
+                framedir = 'frames-0.5' if SCALE_FACTOR == 0.5 else 'frames'
+                image = plt.imread(pjoin(args.basedir, framedir, 'camera{}/{}.jpg'.format(icam, lib.glob2loc(curr_frame, icam))))
 
-
-        for icam in range(1, NUM_CAMS+1):
-            curr_dets_idc = np.where(det_lists[icam-1][:,1] == lib.glob2loc(curr_frame, icam))[0]
-            curr_dets = det_lists[icam-1][curr_dets_idc]
+            curr_dets = det_list[np.where(det_list[:,1] == lib.glob2loc(curr_frame, icam))[0]]
             curr_dets = curr_dets[curr_dets[:,-1] > DET_CONTINUE_THRESH]
 
             gt_curr_frame = lib.slice_all(gt_list, gt_list['GFIDs'] == curr_frame)
@@ -107,14 +108,12 @@ def main(net, args):
             # ===visualization===
             # First, plot what data we have before doing anything.
             if shall_vis(args, curr_frame):
-                curr_image = images[icam-1]
-
                 fig, axes = plt.subplots(2, 2, sharex=True, sharey=True, figsize=(20, 12))
                 (ax_tl, ax_tr), (ax_bl, ax_br) = axes
                 axes = axes.flatten()
 
                 for ax in axes:
-                    ax.imshow(curr_image, extent=[0, 1920, 1080, 0])
+                    ax.imshow(image, extent=[0, 1920, 1080, 0])
 
                 # plot (active) tracks
                 ax_tl.set_title('Groundtruth')
@@ -133,15 +132,15 @@ def main(net, args):
             # ===/visualization===
 
             # ---PREDICT---
-            for track in track_lists[icam-1]:
+            for track in track_list:
                 track.track_predict()
 
             num_curr_dets = len(curr_dets)
-            if num_curr_dets > 0 and len(track_lists[icam-1]) > 0:
+            if num_curr_dets > 0 and len(track_list) > 0:
                 if args.use_appearance:
-                    track_embs = np.array([track.embedding for track in track_lists[icam-1]])
+                    track_embs = np.array([track.embedding for track in track_list])
                     det_xys = [lib.box_center_xy(lib.ltrb_to_box(det[2:])) for det in curr_dets]
-                    det_embs = embed_crops_at(net, images[icam-1], det_xys,
+                    det_embs = embed_crops_at(net, image, det_xys,
                                               debug_out_dir=debug_dir, debug_cam=icam, debug_curr_frame=curr_frame)
                     dist_matrix = net.embeddings_cdist(track_embs, det_embs)
                     #print()
@@ -149,9 +148,9 @@ def main(net, args):
                     #print("dists-top: " + " | ".join(map(str, np.sort(dist_matrix, axis=None)[:5])))
                     #dist_matrix[dist_matrix > DIST_THRESH] = 999999
                 else:
-                    dist_matrix = np.zeros((len(track_lists[icam-1]), num_curr_dets))
+                    dist_matrix = np.zeros((len(track_list), num_curr_dets))
 
-                    for itrack, track in enumerate(track_lists[icam-1]):
+                    for itrack, track in enumerate(track_list):
                         # ---BUILD DISTANCE MATRIX---
                         #  TODO: IoU (outsource distance measure)
                         #              #dist_matrix = [euclidean(tracker.x[0::2],curr_dets[i][2:4]) for i in range(len(curr_dets))]
@@ -176,19 +175,19 @@ def main(net, args):
                     # ---UPDATE---
                     if (dist_matrix[nn_indexes[nn_match_idx][0]][nn_indexes[nn_match_idx][1]] <= DIST_THRESH):
                         nn_det = curr_dets[nn_indexes[nn_match_idx][1]]  # 1st: track_idx, 2nd: 0=track_idx, 1 det_idx
-                        track_lists[icam-1][nn_indexes[nn_match_idx][0]].track_update(lib.box_center_xy(lib.ltrb_to_box(nn_det[2:])))
-                        track_lists[icam-1][nn_indexes[nn_match_idx][0]].track_is_matched(curr_frame)
+                        track_list[nn_indexes[nn_match_idx][0]].track_update(lib.box_center_xy(lib.ltrb_to_box(nn_det[2:])))
+                        track_list[nn_indexes[nn_match_idx][0]].track_is_matched(curr_frame)
                         # remove detection from being unassigend
                         unassigned_dets.remove(nn_indexes[nn_match_idx][1])
                     else:
-                        track_lists[icam-1][nn_indexes[nn_match_idx][0]].track_is_missed(curr_frame)
+                        track_list[nn_indexes[nn_match_idx][0]].track_is_missed(curr_frame)
 
                 # set tracks without any match to miss
-                for miss_idx in list(set(range(len(track_lists[icam-1]))) - set([i[0] for i in nn_indexes])):
-                    track_lists[icam-1][miss_idx].track_is_missed(curr_frame)
+                for miss_idx in list(set(range(len(track_list))) - set([i[0] for i in nn_indexes])):
+                    track_list[miss_idx].track_is_missed(curr_frame)
 
             else:  # No dets => all missed
-                for track in track_lists[icam-1]:
+                for track in track_list:
                     track.track_is_missed(curr_frame)
 
 
@@ -198,21 +197,21 @@ def main(net, args):
                     if curr_dets[unassigend_det_idx][-1] > DET_INIT_THRESH:
                         init_pose = lib.box_center_xy(lib.ltrb_to_box(curr_dets[unassigend_det_idx][2:]))
                         new_track = Track(SEQ_DT, curr_frame, init_pose, track_id=track_id,
-                                          embedding=embed_crops_at(net, images[icam-1], [init_pose])[0] if args.use_appearance else None)
+                                          embedding=embed_crops_at(net, image, [init_pose])[0] if args.use_appearance else None)
                         track_id = track_id + 1
-                        track_lists[icam-1].append(new_track)
+                        track_list.append(new_track)
             else:
                 ### B) 2: new tracks from (unassigend) ground truth
                 for tid, box in zip(curr_gts['TIDs'],curr_gts['boxes']):
-                    if tid in already_tracked_gids[icam-1]:
+                    if tid in already_tracked:
                         continue
                     abs_box = lib.box_rel2abs(box)
                     init_pose = lib.box_center_xy(abs_box)
                     new_track = Track(SEQ_DT, curr_frame, init_pose, track_id=tid,
-                                      embedding=embed_crops_at(net, images[icam-1], [init_pose])[0] if args.use_appearance else None,
+                                      embedding=embed_crops_at(net, image, [init_pose])[0] if args.use_appearance else None,
                                       init_thresh=1,delete_thresh=90)
-                    track_lists[icam - 1].append(new_track)
-                    already_tracked_gids[icam-1].append(tid)
+                    track_list.append(new_track)
+                    already_tracked.append(tid)
 
                     if shall_vis(args, curr_frame):
                         ax_tr.add_patch(patches.Rectangle((abs_box[0], abs_box[1]), abs_box[2], abs_box[3],
@@ -220,12 +219,13 @@ def main(net, args):
 
             ### C) further track-management
             # delete tracks marked as 'deleted' in this tracking cycle
-            track_lists[icam-1] = [i for i in track_lists[icam-1] if i.status != 'deleted']
+            # Modifies track_list in-place, like de-referencing a pointer in C
+            track_list[:] = [i for i in track_list if i.status != 'deleted']
 
             # ===visualization===
             ### Plot the current state of tracks.
             if shall_vis(args, curr_frame):
-                for tracker in track_lists[icam-1]:
+                for tracker in track_list:
                     tracker.plot_track(ax_br, plot_past_trajectory=True)
                     # plt.gca().add_patch(patches.Rectangle((tracker.KF.x[0]-50, tracker.KF.x[2]-200), 100, 200,
                     #                                       fill=False, linewidth=3, edgecolor=tracker.color))
@@ -247,9 +247,9 @@ def main(net, args):
         # ==evaluation===
         if True:
             with open(eval_path, 'a') as eval_file:
-                for icam0, track_list in enumerate(track_lists):
+                for icam, track_list in zip(CAMS, track_lists):
                     for tracker in track_list:
-                        track_eval_line = tracker.get_track_eval_line(cid=icam0 + 1,frame=curr_frame)
+                        track_eval_line = tracker.get_track_eval_line(cid=icam,frame=curr_frame)
                         if track_eval_line is not None:
                             eval_file.write('{} {} {} {} {} {} {} {} {}\n'.format(*track_eval_line))
 
@@ -277,20 +277,20 @@ def savefig(fname, fig=None, orig_size=None, **kw):
     #ax.set_xlim(0, w); ax.set_ylim(h, 0)
     fig.savefig(fname, transparent=True, bbox_inches='tight', pad_inches=0, **kw)
 
-def read_detections():
+def read_detections(cams):
     print("Reading detections...")
-    det_list = [[], [], [], [], [], [], [], []]
-    for icam in range(1,NUM_CAMS+1):
+    det_list = [[] for _ in range(len(cams))]
+    for icam in cams:
         print("Camera {}...".format(icam))
         fname = pjoin(args.basedir, 'detections/camera{}_trainval-mini.mat'.format(icam))
         try:
-            det_list[icam - 1] = loadmat(fname)['detections']
+            det_list[cams.index(icam)] = loadmat(fname)['detections']
         except NotImplementedError:
             with h5py.File(fname, 'r') as det_file:
-                det_list[icam - 1] = np.array(det_file['detections']).T
+                det_list[cams.index(icam)] = np.array(det_file['detections']).T
         # ===setup list of all detections (dukeMTMC format)===
         #with h5py.File(fname, 'r') as det_file:
-        #    det_list[icam - 1] = np.array(det_file['detections']).T
+        #    det_list[CAMS.index(icam)] = np.array(det_file['detections']).T
         print("done!")
     return det_list
 
@@ -353,7 +353,10 @@ if __name__ == '__main__':
                         help='Generate extra many debugging outputs (in outdir).')
     parser.add_argument('--gt_init', action='store_true',
                         help='Use first groundtruth to init tracks.')
+    parser.add_argument('--cams', default='1,2,3,4,5,6,7,8',
+                        help='Array of cameras numbers (1-8) to consider.')
     args = parser.parse_args()
+    args.cams = eval('[' + args.cams + ']')
     print(args)
 
     # This is all for faking the network.
@@ -363,7 +366,7 @@ if __name__ == '__main__':
                        fake_dets=None) if args.use_appearance else None
 
     # Prepare output dirs
-    for icam in range(1, NUM_CAMS+1):
+    for icam in args.cams:
         makedirs(pjoin(args.outdir, 'camera{}'.format(icam)), exist_ok=True)
     makedirs(pjoin(args.outdir, 'results'), exist_ok=True)
 
