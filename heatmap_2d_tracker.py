@@ -127,12 +127,13 @@ def main(net, args):
 
             # B.1) COMMENT IN FOR SEMI-FAKE
             # TODO: Make semi-fake by generating heatmap and clearing out known_embs
-            for new_heatmap, new_id in net.personness(images[icam-1], known_embs=None):
+            # TODO: use image instead of None for real one here
+            for (new_heatmap, init_pose), new_id in net.personness(None, known_embs=None, return_pose=True):
                 # TODO: get correct track_id (loop heatmap, instead of function call?# )
                 # TODO: get id_heatmap of that guy for init_heatmap
                 # Don't fix shape yet, cuz we don't emulate the avg-pool shape screw-up.
                 #new_heatmap = net.fix_shape(new_heatmap, images[icam-1].shape, STATE_SHAPE, fill_value=0)
-                init_pose = lib.argmax2d_xy(new_heatmap)
+                #init_pose = lib.argmax2d_xy(new_heatmap)
                 new_track = Track(net.embed_crops, SEQ_DT,
                                   curr_frame, init_pose, images[icam-1], track_id=new_id,
                                   state_shape=STATE_SHAPE, output_shape=SEQ_SHAPE,
