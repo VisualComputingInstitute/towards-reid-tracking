@@ -38,7 +38,7 @@ def scale_shape(shape, factors):
 
 def argmax2d_xy(arr):
     idx = np.unravel_index(arr.argmax(), arr.shape)
-    return [idx[1], idx[0]]
+    return np.array([idx[1], idx[0]])
 
 
 def softmax(x, T=1):
@@ -52,15 +52,35 @@ def softmin(x, T=1):
 
 
 def entropy(x):
-    return -np.sum(x*np.log(np.clip(x, 1e-5, 1)))
+    return -np.sum(x*np.log2(np.clip(x, 1e-14, 1)))
+
+
+def entropy_avg(x):
+    return -np.mean(x*np.log2(np.clip(x, 1e-14, 1)))
 
 
 def entropy_score(x):
     """ Returns a score between 0 and 1 directly proportional to the entropy.
         It is exactly 0 for (near) uniform distributions, and 1 for single peaks.
     """
-    e0 = entropy(np.zeros_like(x))
+    e0 = entropy(softmax(np.zeros_like(x)))
     return (e0 - entropy(x))/e0
+
+
+def entropy_score_avg(x):
+    """ Returns a score between 0 and 1 directly proportional to the entropy.
+        It is exactly 0 for (near) uniform distributions, and 1 for single peaks.
+    """
+    e0 = entropy_avg(np.full_like(x, 1/np.prod(x.shape)))
+    return (e0 - entropy_avg(x))/e0
+
+
+def xent(p, q):
+    return -np.sum(p*np.log2(np.clip(q, 1e-14, 1)))
+
+
+def xent_avg(p, q):
+    return -np.mean(p*np.log2(np.clip(q, 1e-14, 1)))
 
 
 def my_choice(candidates, n):
@@ -125,30 +145,34 @@ def img2df(img, shape=None):
     return img
 
 
-def gauss2d(cov, nstd=2):
+def gauss2d_xy(cov, nstd=2, mean=[0,0]):
     """
     guaranteed to return filter of odd shape which also keeps probabilities as probabilities.
     """
     sx, sy = np.sqrt(cov[0,0]), np.sqrt(cov[1,1])
     x, y = np.mgrid[-max(1,int(nstd*sy)):max(1,int(nstd*sy))+1:1, -max(1,int(nstd*sx)):max(1,int(nstd*sx))+1:1]
     pos = np.dstack((y, x))
-    rv = multivariate_normal([0, 0], cov)
-    filter = rv.pdf(pos)
-    return filter / np.sum(filter)  # Make sure it's a probability-preserving
+    rv = multivariate_normal(mean, cov)
+    filt = rv.pdf(pos)
+    return filt/np.sum(filt)  # Make sure it's a probability-preserving
 
 
-def paste_into_middle_2d(x, out_shape, fill_value=0):
+def paste_into_middle_2d(x, out_shape=None, fill_value=0, out=None):
+    if out is None:
+        out = np.full(out_shape, fill_value, dtype=x.dtype)
+
+    out_shape = out.shape
+
     if x.shape == out_shape:
         return np.array(x)
 
     h, w = x.shape
     H, W = out_shape
-    dy, dx = (H-h)//2, (W-w)//2
-
+    dy, dx = (H-h)/2, (W-w)/2
+    #print(dy, dx)
     assert 0 <= dy and 0 <= dx,  "Something wrong with shape-fixing! {} = ({}-{})//2 and {} = ({}-{})//2".format(dy, H, h, dx, W, w)
 
-    out = np.full((H,W), fill_value, dtype=x.dtype)
-    out[dy:H-dy,dx:W-dx] = x
+    out[int(dy+0.5):H-int(dy),int(dx+0.5):W-int(dx)] = x
     return out
 
 
@@ -394,8 +418,12 @@ def wiggle_box(box, pct_move=None, factor_size=None):
     l, t, w, h = box
 
     if pct_move is not None:
-        l += randin(-w*pct_move, w*pct_move)
-        t += randin(-h*pct_move, h*pct_move)
+        try:
+            len(pct_move)
+        except TypeError:
+            pct_move = (pct_move, pct_move)
+        l += randin(-w*pct_move[1], w*pct_move[1])
+        t += randin(-h*pct_move[0], h*pct_move[0])
 
     nw, nh = w, h
     if factor_size is not None:
