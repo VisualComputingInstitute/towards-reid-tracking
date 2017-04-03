@@ -41,7 +41,7 @@ class SemiFakeNews:
         print(" Done", flush=True)
 
         #fake_shape = out.shape[2:]  # We didn't fake the avg-pool effect yet, so don't!
-        self.fake = FakeNeuralNewsNetwork(fake_dets, fake_shape=fake_shape) if fake_dets is not None else None
+        self.fake = FakeNeuralNewsNetwork(fake_dets, shape=fake_shape) if fake_dets is not None else None
 
 
     def _scale_input_shape(self, shape):
@@ -103,6 +103,6 @@ class SemiFakeNews:
 
     # THIS IS THE ONLY THING FAKE :(
     # TODO: Make semi-fake, by clearing out known_embs.
-    def personness(self, image, known_embs):
+    def personness(self, image, known_embs, return_pose=False):
         assert self.fake is not None, "The world doesn't work that way my friend!"
-        return self.fake.personness(image, known_embs)
+        return self.fake.personness(image, known_embs, return_pose)
