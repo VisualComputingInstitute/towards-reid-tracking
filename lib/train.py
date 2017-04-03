@@ -85,7 +85,7 @@ def get_pk_batch(Ximgs, Xtr, ntid, img_per_tid, boxsize, subsamp, ret_iou=False,
             image = Ximgs[cid-1][fidx]
             _, H, W = image.shape
             box = lib.rebox_centered(box, h=boxsize[0]/H, w=boxsize[1]/W)
-            box = lib.wiggle_box(box, pct_move=augkw.get('pct_move', None))
+            box = lib.wiggle_box(box, pct_move=augkw.get('pct_move', None), factor_size=augkw.get('factor_size', None))
             co = np.array(lib.cutout_rel_chw(image, lib.stick_to_bounds(box)))
             if augkw.get('flip', False) and np.random.rand() < 0.5:
                 co = co[:,:,::-1]
@@ -105,6 +105,64 @@ def get_pk_batch(Ximgs, Xtr, ntid, img_per_tid, boxsize, subsamp, ret_iou=False,
     else:
         return Ximg, ypid, np.array(ious, dtype=np.float32)
     # TODO: have the box-size vary and resize it to fixed?
+
+
+def get_pk_batch2(Ximgs, Xtr, ntid, img_per_tid, boxsize, subsamp, max_overlap_iou, **augkw):
+    """ For now, `augkw` is only `pct_move` and a boolean `flip`.
+    Specifically, for `factor_size`, I'd have to add a scaling call, which I don't want yet.
+    """
+    all_tids = np.unique(Xtr['TIDs'])  #50ms, 215ms if return_index=True
+
+    cutouts, tids, ious = [], [], []
+    while len(cutouts) < ntid*img_per_tid:
+        # Select the next person randomly from those still available.
+        tid = np.random.choice(all_tids)
+
+        # Try hard to get `img_per_tid` many good crops of that person
+        candidate_indices = np.where(Xtr['TIDs'] == tid)[0]
+        this_tid_cutouts, this_tid_ious = [], []
+        ntrials = 0
+        max_trials = max(img_per_tid, min(img_per_tid*10, len(candidate_indices)))
+        while len(this_tid_cutouts) < img_per_tid and ntrials < max_trials:
+            ntrials += 1
+            boxidx = np.random.choice(candidate_indices)
+
+            box = Xtr['boxes'][boxidx]
+            cid = Xtr['Cams'][boxidx]
+            lfid = Xtr['LFIDs'][boxidx]
+
+            # Make it fit to the subsampling factor
+            assert lfid % subsamp == 0, "Not implemented yet!"
+            fidx = lfid//subsamp
+            lfid = fidx*subsamp
+
+            # Compute the crop box.
+            image = Ximgs[cid-1][fidx]
+            _, H, W = image.shape
+            box = lib.rebox_centered(box, h=boxsize[0]/H, w=boxsize[1]/W)
+            box = lib.wiggle_box(box, pct_move=augkw.get('pct_move', None), factor_size=augkw.get('factor_size', None))
+            box = lib.stick_to_bounds(box)
+
+            # Check if the box has large IoU with *two*, discard.
+            mask_boxes = (Xtr['LFIDs'] == lfid) & (Xtr['Cams'] == cid)
+            boxes = Xtr['boxes'][np.where(mask_boxes)[0]]
+            if 2 <= sum(1 for b in boxes if max_overlap_iou < lib.iou(box, b)):
+                continue
+
+            # This one is good, keep it!
+            co = np.array(lib.cutout_rel_chw(image, box))
+            if augkw.get('flip', False) and np.random.rand() < 0.5:
+                co = co[:,:,::-1]
+            this_tid_cutouts.append(co)
+            this_tid_ious.append(lib.max_iou(box, boxes))  # Take the max as IoU isn't tied to person ID.
+
+        # We got enough of this person, append to the overall.
+        cutouts.extend(this_tid_cutouts)
+        ious.extend(this_tid_ious)
+        tids.extend([tid]*len(this_tid_cutouts))
+
+    Ximg = np.array(cutouts, dtype=np.float32)/255.0
+    return Ximg, np.array(tids, dtype=np.uint32), np.array(ious, dtype=np.float32)
 
 
 def stat(f, name, e, b, vals):
