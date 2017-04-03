@@ -29,9 +29,9 @@ from semifake import SemiFakeNews
 SEQ_FPS = 60.0
 SEQ_DT = 1./SEQ_FPS
 SEQ_SHAPE = (1080, 1920)
-STATE_SHAPE = (270, 480)  # Heatmaps: (26, 58) -> (33, 60)
-NUM_CAMS = 2 # which cam to consider (from 1 to NUM_CAMS), max: 8
-SCALE_FACTOR = 0.5
+STATE_SHAPE = (135, 240)  # Heatmaps: (26, 58) -> (33, 60)
+STATE_PADDING = ((5,5), (10,10))  # state shape is this much larger on the sides, see np.pad.
+CAMS = list(range(1,8+1))# [1,2]
 
 
 g_frames = 0  # Global counter for correct FPS in all cases
@@ -52,7 +52,14 @@ def shall_vis(args, curr_frame):
     return args.vis and (curr_frame - args.t0) % args.vis == 0
 
 
-#@profile
+@lib.lru_cache(maxsize=len(CAMS)*2)  # *2 just for good measure =)
+def get_image(basedir, icam, frame):
+    #framedir = 'frames-0.5' if SCALE_FACTOR == 0.5 else 'frames'
+    # TODO: Use basedir again, from args.
+    return plt.imread(pjoin('/work3/beyer/', 'frames-0.5', 'camera{}/{}.jpg'.format(icam, lib.glob2loc(frame, icam))))
+
+
+@profile
 def main(net, args):
     eval_path = pjoin(args.outdir, 'results/run_{:%Y-%m-%d_%H:%M:%S}.txt'.format(datetime.datetime.now()))
 
@@ -61,8 +68,15 @@ def main(net, args):
         debug_dir = pjoin(args.outdir, 'debug/run_{:%Y-%m-%d_%H:%M:%S}'.format(datetime.datetime.now()))
         makedirs(pjoin(debug_dir, 'crops'), exist_ok=True)
 
-    track_lists = [[] for _ in range(NUM_CAMS)]
+    track_lists = [[] for _ in CAMS]
     track_id = 1
+
+    # Open embedding cache
+    try:
+        # TODO: make better, ideally real cache
+        embs_caches = [h5py.File(pjoin(args.basedir, 'frames', 'lunet2c-val-camera{}.h5'.format(icam)), 'r')['embs'] for icam in CAMS]
+    except:
+        embs_caches = [None]*len(CAMS)
 
     # ===Tracking fun begins: iterate over frames===
     # TODO: global time (duke)
@@ -70,11 +84,16 @@ def main(net, args):
         print("\rFrame {}, {} matched/missed/init/total tracks, {} total seen".format(curr_frame, ', '.join(map(n_active_tracks, track_lists)), sum(map(len, track_lists))), end='', flush=True)
         net.tick(curr_frame)
 
-        images = [plt.imread(pjoin(args.basedir, 'frames/camera{}/{}.jpg'.format(icam, lib.glob2loc(curr_frame, icam)))) for icam in range(1,8+1)]
-        image_embeddings = net.embed_images(images, batch=args.large_gpu)
-
-        for icam, track_list in zip(range(1, NUM_CAMS+1), track_lists):
+        for icam, track_list, embs_cache in zip(CAMS, track_lists, embs_caches):
             net.fake_camera(icam)
+
+            image_getter = lambda: get_image(args.basedir, icam, curr_frame)
+
+            # Either embed the image, or load embedding from cache.
+            if embs_cache is not None:
+                image_embedding = np.array(embs_cache[curr_frame-args.t0])
+            else:
+                image_embedding = net.embed_images([image_getter()])[0]
 
 
             # ===visualization===
@@ -87,7 +106,7 @@ def main(net, args):
                 axes = axes.flatten()
 
                 for ax in axes:
-                    ax.imshow(images[icam-1], extent=[0, SEQ_SHAPE[1], SEQ_SHAPE[0], 0])
+                    ax.imshow(image_getter(), extent=[0, SEQ_SHAPE[1], SEQ_SHAPE[0], 0])
 
                 # plot (active) tracks
                 #ax_tl.set_title('Raw Personness')
@@ -107,12 +126,14 @@ def main(net, args):
                     track.plot_pred_heatmap(ax_ml)
 
                 # ---SEARCH---
-                id_heatmap = net.search_person(image_embeddings[icam-1], track.embedding,
+                id_heatmap = net.search_person(image_embedding, track.embedding,
                                                fake_track_id=track.track_id)  # Unused by real net.
-                id_heatmap = net.fix_shape(id_heatmap, images[icam-1].shape, STATE_SHAPE, fill_value=0)
+                # FIXME: should be image.shape, or at least use scale-factor.
+                id_heatmap = net.fix_shape(id_heatmap, (1080//2, 1920//2), STATE_SHAPE, fill_value=0)
+                id_heatmap /= id_heatmap.sum()
 
                 # ---UPDATE---
-                track.track_update(id_heatmap, curr_frame, images[icam-1])
+                track.track_update(id_heatmap, curr_frame, image_getter)
 
                 if shall_vis(args, curr_frame):
                     track.plot_id_heatmap(ax_mr)
@@ -134,13 +155,13 @@ def main(net, args):
                 # Don't fix shape yet, cuz we don't emulate the avg-pool shape screw-up.
                 #new_heatmap = net.fix_shape(new_heatmap, images[icam-1].shape, STATE_SHAPE, fill_value=0)
                 #init_pose = lib.argmax2d_xy(new_heatmap)
-                new_track = Track(net.embed_crops, SEQ_DT,
-                                  curr_frame, init_pose, images[icam-1], track_id=new_id,
-                                  state_shape=STATE_SHAPE, output_shape=SEQ_SHAPE,
+                new_track = Track(net.embed_crops,
+                                  curr_frame, init_pose, image_getter(), track_id=new_id,
+                                  state_shape=STATE_SHAPE, state_pad=STATE_PADDING, output_shape=SEQ_SHAPE,
                                   person_matching_threshold=0.001,
                                   debug_out_dir=debug_dir)
                 new_track.init_heatmap(new_heatmap)
-                track_lists[icam-1].append(new_track)
+                track_list.append(new_track)
 
             # B.2) REAL NEWS
             # TODO: Missing non-max suppression
@@ -162,7 +183,7 @@ def main(net, args):
             if shall_vis(args, curr_frame):
                 for track in track_list:
                     track.plot_pos_heatmap(ax_bl)
-                    track.plot_track(ax_br, plot_past_trajectory=True)
+                    track.plot_track(ax_br, plot_past_trajectory=True, time_scale=args.vis)
 
                 for ax in axes:
                     # TODO: Flex
@@ -180,7 +201,7 @@ def main(net, args):
 
         # ==evaluation===
         with open(eval_path, 'a') as eval_file:
-            for icam, track_list in zip(range(1, 8 + 1), track_lists):
+            for icam, track_list in zip(CAMS, track_lists):
                 for track in track_list:
                     track_eval_line = track.get_track_eval_line(cid=icam, frame=curr_frame)
                     eval_file.write('{} {} {} {} {} {} {} {} {}\n'.format(*track_eval_line))
@@ -217,7 +238,7 @@ if __name__ == '__main__':
                         help='Path to `train` folder of 2DMOT2015.')
     parser.add_argument('--outdir', nargs='?', default='/home/breuers/results/duke_mtmc/',
                         help='Where to store generated output. Only needed if `--vis` is also passed.')
-    parser.add_argument('--model', default='lunet2',
+    parser.add_argument('--model', default='lunet2c',
                         help='Name of the model to load. Corresponds to module names in lib/models. Or `fake`')
     parser.add_argument('--weights', default='/work/breuers/dukeMTMC/models/lunet2-final.pkl',
                         help='Name of the weights to load for the model (path to .pkl file).')
@@ -242,7 +263,7 @@ if __name__ == '__main__':
         net = SemiFakeNews(
             model=args.model,
             weights=args.weights,
-            input_scale_factor=0.5,
+            input_scale_factor=1.0,
             fake_dets=lib.load_trainval(pjoin(args.basedir, 'ground_truth', 'trainval.mat'), time_range=[args.t0, args.t1]),
             fake_shape=STATE_SHAPE,
         )
