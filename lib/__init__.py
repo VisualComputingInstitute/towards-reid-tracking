@@ -225,6 +225,14 @@ try:
         return cv2.filter2D(image, cv2.CV_64F, filt, borderType=cv2.BORDER_REPLICATE)
 
 
+    def convolve_edge_zeropad(image, filt):
+        dx1, dx2 = filt.shape[1]//2, filt.shape[1]//2
+        dy1, dy2 = filt.shape[0]//2, filt.shape[0]//2
+        x = cv2.copyMakeBorder(x, dy1, dy2, dx1, dx2, cv2.BORDER_CONSTANT)
+        x = cv2.filter2D(x, -1, filt)
+        return x[dy1:-dy2,dx1:-dx2]
+
+
     def video_or_open(video):
         # Because can't access cv2.VideoCapture type (only function exposed)
         if type(video).__name__ == 'VideoCapture':
