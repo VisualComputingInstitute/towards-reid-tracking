@@ -247,12 +247,7 @@ class Track(object):
         self.status = 'deleted'
 
     # ==Evaluation==
-    def get_track_eval_line(self,cid=1,frame=0):
-        #pymot format
-        #[height,width,id,y,x,z]
-        #return {"height": 0, "width": 0, "id": self.track_id, "y": self.KF.x[2], "x": self.KF.x[0], "z": 0}
-        #motchallenge format
-        #TODO
+    def get_track_eval_line(self, cid, frame):
         #dukeMTMC format
         #[cam, ID, frame, left, top, width, height, worldX, worldY]
         cX,cY = self.state_to_output(*self.poses[-1])
@@ -260,7 +255,9 @@ class Track(object):
         w = int(0.4*h)
         l = int(cX-w/2)
         t = int(cY-h/2)
-        return [cid, self.track_id, frame, l, t, w, h, -1, -1]
+        # id-shift-quick-hack for multi-cam eval.
+        return [cid, self.track_id+cid*100000, lib.glob2loc(frame, cid), l, t, w, h, -1, -1]
+
 
 
     # ==Visualization==

@@ -31,7 +31,6 @@ SEQ_DT = 1./SEQ_FPS
 SEQ_SHAPE = (1080, 1920)
 STATE_SHAPE = (135, 240)  # Heatmaps: (26, 58) -> (33, 60)
 STATE_PADDING = ((5,5), (10,10))  # state shape is this much larger on the sides, see np.pad.
-CAMS = list(range(1,8+1))# [1,2]
 
 
 g_frames = 0  # Global counter for correct FPS in all cases
@@ -52,7 +51,7 @@ def shall_vis(args, curr_frame):
     return args.vis and (curr_frame - args.t0) % args.vis == 0
 
 
-@lib.lru_cache(maxsize=len(CAMS)*2)  # *2 just for good measure =)
+@lib.lru_cache(maxsize=16)  # In theory 1 is enough here, but whatever =)
 def get_image(basedir, icam, frame):
     #framedir = 'frames-0.5' if SCALE_FACTOR == 0.5 else 'frames'
     # TODO: Use basedir again, from args.
@@ -68,15 +67,15 @@ def main(net, args):
         debug_dir = pjoin(args.outdir, 'debug/run_{:%Y-%m-%d_%H:%M:%S}'.format(datetime.datetime.now()))
         makedirs(pjoin(debug_dir, 'crops'), exist_ok=True)
 
-    track_lists = [[] for _ in CAMS]
+    track_lists = [[] for _ in args.cams]
     track_id = 1
 
     # Open embedding cache
     try:
         # TODO: make better, ideally real cache
-        embs_caches = [h5py.File(pjoin(args.basedir, 'frames', 'lunet2c-val-camera{}.h5'.format(icam)), 'r')['embs'] for icam in CAMS]
+        embs_caches = [h5py.File(pjoin(args.basedir, 'frames', 'lunet2c-val-camera{}.h5'.format(icam)), 'r')['embs'] for icam in args.cams]
     except:
-        embs_caches = [None]*len(CAMS)
+        embs_caches = [None]*len(args.cams)
 
     # ===Tracking fun begins: iterate over frames===
     # TODO: global time (duke)
@@ -84,7 +83,7 @@ def main(net, args):
         print("\rFrame {}, {} matched/missed/init/total tracks, {} total seen".format(curr_frame, ', '.join(map(n_active_tracks, track_lists)), sum(map(len, track_lists))), end='', flush=True)
         net.tick(curr_frame)
 
-        for icam, track_list, embs_cache in zip(CAMS, track_lists, embs_caches):
+        for icam, track_list, embs_cache in zip(args.cams, track_lists, embs_caches):
             net.fake_camera(icam)
 
             image_getter = lambda: get_image(args.basedir, icam, curr_frame)
@@ -201,7 +200,7 @@ def main(net, args):
 
         # ==evaluation===
         with open(eval_path, 'a') as eval_file:
-            for icam, track_list in zip(CAMS, track_lists):
+            for icam, track_list in zip(args.cams, track_lists):
                 for track in track_list:
                     track_eval_line = track.get_track_eval_line(cid=icam, frame=curr_frame)
                     eval_file.write('{} {} {} {} {} {} {} {} {}\n'.format(*track_eval_line))
@@ -252,7 +251,10 @@ if __name__ == '__main__':
                         help='Generate and save visualization of the results, every X frame.')
     parser.add_argument('--debug', action='store_true',
                         help='Generate extra many debugging outputs (in outdir).')
+    parser.add_argument('--cams', default='1,2,3,4,5,6,7,8',
+                        help='Array of cameras numbers (1-8) to consider.')
     args = parser.parse_args()
+    args.cams = eval('[' + args.cams + ']')
     print(args)
 
     # This is all for faking the network.
@@ -269,7 +271,7 @@ if __name__ == '__main__':
         )
 
     # Prepare output dirs
-    for icam in range(1, 8+1):
+    for icam in args.cams:
         makedirs(pjoin(args.outdir, 'camera{}'.format(icam)), exist_ok=True)
     makedirs(pjoin(args.outdir, 'results'), exist_ok=True)
 
