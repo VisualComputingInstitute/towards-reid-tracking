@@ -10,9 +10,10 @@ from os import makedirs
 import time, datetime
 
 # the usual suspects
+import h5py
 import numpy as np
 import matplotlib as mpl
-#mpl.use('Agg')
+mpl.use('Agg')
 #mpl.use('GTK')
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -34,6 +35,13 @@ STATE_PADDING = ((5,5), (10,10))  # state shape is this much larger on the sides
 
 
 g_frames = 0  # Global counter for correct FPS in all cases
+
+
+try:
+    profile
+except NameError:
+    def profile(f):
+        return f
 
 
 def n_active_tracks(tracklist):
@@ -71,10 +79,9 @@ def main(net, args):
     track_id = 1
 
     # Open embedding cache
-    try:
-        # TODO: make better, ideally real cache
-        embs_caches = [h5py.File(pjoin(args.basedir, 'frames', 'lunet2c-val-camera{}.h5'.format(icam)), 'r')['embs'] for icam in args.cams]
-    except:
+    if args.embcache is not None:
+        embs_caches = [h5py.File(args.embcache.format(icam), 'r')['embs'] for icam in args.cams]
+    else:
         embs_caches = [None]*len(args.cams)
 
     # ===Tracking fun begins: iterate over frames===
@@ -90,7 +97,7 @@ def main(net, args):
 
             # Either embed the image, or load embedding from cache.
             if embs_cache is not None:
-                image_embedding = np.array(embs_cache[curr_frame-args.t0])
+                image_embedding = np.array(embs_cache[curr_frame-127720])  # That's where the cache starts!
             else:
                 image_embedding = net.embed_images([image_getter()])[0]
 
@@ -125,14 +132,15 @@ def main(net, args):
                     track.plot_pred_heatmap(ax_ml)
 
                 # ---SEARCH---
-                id_heatmap = net.search_person(image_embedding, track.embedding,
+                id_distmap = net.search_person(image_embedding, track.embedding, T=1,
                                                fake_track_id=track.track_id)  # Unused by real net.
                 # FIXME: should be image.shape, or at least use scale-factor.
-                id_heatmap = net.fix_shape(id_heatmap, (1080//2, 1920//2), STATE_SHAPE, fill_value=0)
-                id_heatmap /= id_heatmap.sum()
+                id_distmap = net.fix_shape(id_distmap, (1080//2, 1920//2), STATE_SHAPE, fill_value=1/np.prod(STATE_SHAPE))
+                id_heatmap = lib.softmin(id_distmap, T=1)
+                #id_heatmap /= np.sum(id_heatmap)
 
                 # ---UPDATE---
-                track.track_update(id_heatmap, curr_frame, image_getter)
+                track.track_update(id_heatmap, id_distmap, curr_frame, image_getter)
 
                 if shall_vis(args, curr_frame):
                     track.plot_id_heatmap(ax_mr)
@@ -157,9 +165,12 @@ def main(net, args):
                 new_track = Track(net.embed_crops,
                                   curr_frame, init_pose, image_getter(), track_id=new_id,
                                   state_shape=STATE_SHAPE, state_pad=STATE_PADDING, output_shape=SEQ_SHAPE,
-                                  person_matching_threshold=0.001,
+                                  dist_thresh=args.dist_thresh, entropy_thresh=args.ent_thresh,
+                                  unmiss_thresh=args.unmiss_thresh, delete_thresh=args.delete_thresh,
+                                  maxlife=args.maxlife, tp_hack=args.tp_hack,
                                   debug_out_dir=debug_dir)
                 new_track.init_heatmap(new_heatmap)
+                #new_track.init_heatmap(np.full(STATE_SHAPE, 1/np.prod(STATE_SHAPE)))
                 track_list.append(new_track)
 
             # B.2) REAL NEWS
@@ -169,7 +180,6 @@ def main(net, args):
             #     new_track = Track(net.embed_crop, SEQ_DT,
             #                       curr_frame, init_pose, images[icam-1], track_id=track_id,
             #                       state_shape=STATE_SHAPE, output_shape=SEQ_SHAPE,
-            #                       person_matching_threshold=0.001,
             #                       debug_out_dir=debug_dir)
 
             #     # Embed around the initial pose and compute an initial heatmap.
@@ -195,7 +205,7 @@ def main(net, args):
 
             ### C) further track-management
             # delete tracks marked as 'deleted' in this tracking cycle #TODO: manage in other list for re-id
-            #track_list = [i for i in track_list if i.status != 'deleted']
+            track_list[:] = [i for i in track_list if i.status != 'deleted']
 
 
         # ==evaluation===
@@ -253,6 +263,16 @@ if __name__ == '__main__':
                         help='Generate extra many debugging outputs (in outdir).')
     parser.add_argument('--cams', default='1,2,3,4,5,6,7,8',
                         help='Array of cameras numbers (1-8) to consider.')
+    parser.add_argument('--embcache',
+                        help='Optional path to embeddings-cache file for speeding things up. Put a `{}` as placeholder for camera-number.')
+    parser.add_argument('--dist_thresh', default=7, type=float,
+                        help='Distance threshold to evaluate measurment certainty.')
+    parser.add_argument('--ent_thresh', default=0.1, type=float,
+                        help='Entropy threshold to evaluate measurment certainty.')
+    parser.add_argument('--maxlife', type=int)
+    parser.add_argument('--tp_hack', type=float)
+    parser.add_argument('--unmiss_thresh', type=int, default=2)
+    parser.add_argument('--delete_thresh', type=int, default=90)
     args = parser.parse_args()
     args.cams = eval('[' + args.cams + ']')
     print(args)

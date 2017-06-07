@@ -37,13 +37,24 @@ class FakeNeuralNewsNetwork:
         new_heatmaps_and_ids = []
         for each_det_idx in new_det_indices:
             det = self.curr_cam_dets['boxes'][each_det_idx]
-            new_heatmap = self._heatmap_sampling_for_dets([det])
+            #new_heatmap = self._heatmap_sampling_for_dets([det])
+            new_heatmap = self._one_fake_gaussian(lib.rebox_centered(det, det[3]*2, det[2]*2, bounds=None))
             if return_pose:
                 new_heatmap = (new_heatmap, lib.box_center_xy(lib.box_rel2abs(det, h=self.shape[0], w=self.shape[1])))
             new_id = self.curr_cam_dets['TIDs'][each_det_idx]
             already_tracked_ids.append(new_id)
             new_heatmaps_and_ids.append((new_heatmap, new_id))
         return new_heatmaps_and_ids
+
+
+    def _one_fake_gaussian(self, box_rel):
+        # NOTE: There certainly is a better way, but I'm tired.
+        heatmap = np.zeros(self.shape)
+        box_abs = lib.box_rel2abs(box_rel, h=self.shape[0], w=self.shape[1])
+        x, y = lib.box_center_xy(box_abs)
+        heatmap[int(round(y)),int(round(x))] = 1
+        _, __, w, h = box_abs
+        return lib.convolve_edge_zeropad(heatmap, lib.gauss2d_xy([[(w/4)**2, 0], [0, (h/4)**2]], nstd=2))
 
 
     def _heatmap_sampling_for_dets(self, dets_boxes):

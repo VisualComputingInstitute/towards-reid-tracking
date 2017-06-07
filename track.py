@@ -40,22 +40,21 @@ class Track(object):
 
     def __init__(self, embed_crops_fn, curr_frame, init_pose, image,
                  state_shape, state_pad, output_shape, track_id=-1,
-                 person_matching_threshold=0.5, debug_out_dir=None):
+                 dist_thresh=7, entropy_thresh=0.10,
+                 unmiss_thresh=2, delete_thresh=90,
+                 tp_hack=None, maxlife=None,
+                 debug_out_dir=None):
         self.embed_crops_fn = embed_crops_fn
-        self.person_matching_threshold = person_matching_threshold
         self.debug_out_dir = debug_out_dir
 
         init_x = [0.0, 0.0]
-        self.init_P_scale = 200.0
+        #self.init_P_scale = 200.0
+        #self.init_P_scale = 5.0
+        self.init_P_scale = 5.0**2
 
-        self.VEL_MEAS_CERT_THRESH = 0.015
-
-        self.track_id = track_id
-        self.color = np.random.rand(3)
-        self.hm_colormap = lbplt.linear_map((1,1,1), self.color)
-        self.hm_colormap = lib.get_transparent_colormap(self.hm_colormap)
-        self.xs=[init_x]
-        self.Ps=[self.init_P_scale*np.eye(2)]
+        self.DIST_THRESH = dist_thresh
+        self.ENT_THRESH = entropy_thresh
+        #self.VEL_MEAS_CERT_THRESH = 0.015
 
         self.KF = KalmanFilter(dim_x=2, dim_z=2)
         self.KF.F = np.array([[1, 0],
@@ -63,14 +62,25 @@ class Track(object):
         #q = Q_discrete_white_noise(dim=2, dt=dt, var=200.)
         #self.KF.Q = block_diag(q, q)  # TODO: matrix design for all the filters
         #self.KF.Q = q  # heatmap v only
-        self.KF.Q = 0.02*np.eye(2)  # Higher: more prediction uncertainty.
+        # 0.02
+        #self.KF.Q = 0.02*np.eye(2)  # Process noise. Always added to prediction. Higher = uncertainty grows faster when no measurement
+        self.KF.Q = 0.3**2*np.eye(2)  # Process noise. Always added to prediction. Higher = uncertainty grows faster when no measurement
         self.KF.H = np.array([[1, 0],
                               [0, 1]], dtype=np.float64)
-        self.KF.R = 150.0*np.eye(2)  # Lower: jump more to measurement
+        #self.KF.R = 100.0*np.eye(2)  # Measurement variance. Lower: jump more to measurement
+        self.KF.R = 20.0**2*np.eye(2)  # Lower: jump more to measurement
         self.KF.x = init_x
         self.KF.P = self.init_P_scale*np.eye(2)
 
+        self.track_id = track_id
+        self.color = np.random.rand(3)
+        self.hm_colormap = lbplt.linear_map((1,1,1), self.color)
+        self.hm_colormap = lib.get_transparent_colormap(self.hm_colormap)
+        self.xs=[self.KF.x]
+        self.Ps=[self.KF.P]
+
         self.missed_for = 0
+        self.missed_sightings = 0
         self.deleted_at = 0
         self.last_matched_at = curr_frame
         self.created_at = curr_frame
@@ -78,9 +88,15 @@ class Track(object):
 
         self.status = 'matched' # matched, missed, deleted
         self.age = 1 #age in frames
+        self.MAXLIFE = maxlife
+        self.TP_HACK = tp_hack
 
         #missed for [delete_thresh] times? delete!
-        self.delete_thresh = 90  # 1.5s
+        #self.DELETE_THRESH = 300 #90  # 1.5s
+        self.DELETE_THRESH = delete_thresh  # 1.5s
+
+        # How many times do I need to see him while he's missing to un-miss him?
+        self.UNMISS_THRESH = unmiss_thresh
 
         self.state_shape = state_shape
         self.state_pad = state_pad
@@ -93,14 +109,24 @@ class Track(object):
         self.update_embedding(self.get_embedding_at_current_pos(image, curr_frame))
 
     def init_heatmap(self, heatmap):
+        #self.pos_heatmap = self.resize_map_to_state(np.full_like(heatmap, 1/np.prod(heatmap.shape)))
         self.pos_heatmap = self.resize_map_to_state(heatmap)
         self.old_heatmap = None
-        self.id_heatmap = np.full_like(heatmap, 1/np.prod(self.pos_heatmap.shape))
+        #self.id_heatmap = np.full_like(heatmap, 1/np.prod(self.pos_heatmap.shape))
+        self.id_heatmap = self.resize_map_to_state(np.full_like(heatmap, 1/np.prod(heatmap.shape)))
+
+        self.idmap_ent = 0.0 #lib.entropy_score_avg(self.id_heatmap)
+        self.idmap_score = 9999  # np.min(id_distmap)
+        self.this_map_good = False #self.idmap_score < self.DIST_THRESH and self.ENT_THRESH < self.idmap_ent
 
     # ==Heatmap stuff==
-    def resize_map_to_state(self, heatmap):
+    def resize_map_to_state(self, heatmap, keep_sum=True):
         assert heatmap.shape == self.state_shape, "Lying Lucas giving me a heatmap that's not state-shaped!"
-        return np.pad(heatmap, self.state_pad, mode='constant')
+        #hm = np.pad(heatmap, self.state_pad, mode='constant', constant_values=1/np.prod(heatmap.shape))
+        hm = np.pad(heatmap, self.state_pad, mode='edge')
+        if keep_sum:
+            hm /= np.sum(hm)*np.sum(heatmap)
+        return hm
         #return lib.resize_map(heatmap, self.state_shape, interp='bicubic')
 
     def unpad_state_map(self, statemap):
@@ -145,8 +171,10 @@ class Track(object):
             x = x - self.state_pad[1][0]
             y = y - self.state_pad[0][0]
 
-        return [x/self.state_shape[1]*output_shape[1],
-                y/self.state_shape[0]*output_shape[0]]
+        return np.array([
+            x/self.state_shape[1]*output_shape[1],
+            y/self.state_shape[0]*output_shape[0]
+        ])
 
 
     def states_to_outputs(self, xy, output_shape, ignore_padding=False):
@@ -161,86 +189,115 @@ class Track(object):
                    output_shape[0]/self.state_shape[0]]
         return xy*factors
 
+    def estimate_peak_xy(self, heatmap):
+        #return lib.argmax2d_xy(heatmap)
+        return lib.expected_xy(heatmap, magic_thresh=2)
+
     def get_velocity_estimate(self, old_heatmap, pos_heatmap):
-        old_peak = lib.argmax2d_xy(old_heatmap)
-        new_peak = lib.argmax2d_xy(pos_heatmap)
+        old_peak = self.estimate_peak_xy(old_heatmap)
+        new_peak = self.estimate_peak_xy(pos_heatmap)
         return new_peak - old_peak
 
     def track_predict(self):
+        vx, vy = self.KF.x
+        #self.pred_heatmap = scipy.ndimage.shift(self.pos_heatmap, [vy, vx])
+        gaussian = lib.gauss2d_xy(np.clip(self.KF.P, 1e-5, self.init_P_scale), nstd=2, mean=[-vx, -vy])
+        self.pred_heatmap = lib.convolve_edge_same(self.pos_heatmap, gaussian)
+        self.pred_heatmap /= np.sum(self.pred_heatmap)  # Re-normalize to probabilities
+
         # standard KF
         self.KF.predict()
 
-        vx, vy = self.KF.x
-        self.pred_heatmap = scipy.ndimage.shift(self.pos_heatmap, [vy, vx])
-        gaussian = lib.gauss2d_xy(np.clip(self.KF.P, 1e-5, self.init_P_scale))
-        self.pred_heatmap = lib.convolve_edge_same(self.pred_heatmap, gaussian)
-        self.pred_heatmap /= np.sum(self.pred_heatmap) # Re-normalize to probabilities
+    def track_update(self, id_heatmap, id_distmap, curr_frame, image_getter):
+        self.age += 1
 
-    def track_update(self, id_heatmap, curr_frame, image_getter):
-        prev_id_heatmap_ent = lib.entropy_score_avg(self.id_heatmap)
-        self.id_heatmap = self.resize_map_to_state(id_heatmap)
-        self.this_id_heatmap_ent = lib.entropy_score_avg(self.id_heatmap)
+        # Hard rule for pathological cases.
+        if self.MAXLIFE is not None and self.MAXLIFE < self.age:
+            print("WARNING: Killing one of age.")
+            return self.track_is_deleted(curr_frame)
 
         self.old_heatmap = self.pos_heatmap
+        self.old_map_good = self.this_map_good
 
-        # TODO: Maybe 0.09, but definitely in [0.05, 0.12].
-        ID_MAP_THRESH = 0.1
-        if ID_MAP_THRESH < self.this_id_heatmap_ent:
+        self.id_heatmap = self.resize_map_to_state(id_heatmap)
+
+        self.idmap_ent = lib.entropy_score_avg(self.id_heatmap)
+        self.idmap_score = np.min(id_distmap)
+        self.this_map_good = self.idmap_score < self.DIST_THRESH and self.ENT_THRESH < self.idmap_ent
+
+        if self.this_map_good:
             self.pos_heatmap = self.pred_heatmap*self.id_heatmap
             self.pos_heatmap /= np.sum(self.pos_heatmap)  # Re-normalize to probabilities
+
+            # Discard impossible jumps. TODO: It's a hack
+            if self.TP_HACK is not None:
+                xy = self.estimate_peak_xy(self.pos_heatmap)
+                tpdist = np.sqrt(np.sum((self.poses[-1] - xy)**2))
+                if tpdist > self.TP_HACK:
+                    self.pos_heatmap = self.pred_heatmap
+                    self.this_map_good = False
         else:
             self.pos_heatmap = self.pred_heatmap
+            #self.pos_heatmap = self.pred_heatmap*lib.softmax(self.id_heatmap, T=10)
+            #self.pos_heatmap /= np.sum(self.pos_heatmap)  # Re-normalize to probabilities
+        #self.pos_heatmap = self.pred_heatmap*self.id_heatmap
+        #self.pos_heatmap /= np.sum(self.pos_heatmap)  # Re-normalize to probabilities
 
         # Compute a velocity measurement from previous and current peaks in heatmap.
         # The certainty of the velocity measurement is a function of the certainties of
         # both position "measurements", i.e. how peaky both heatmaps are.
         #self.vel_meas_certainty = lib.entropy_score_avg(self.old_heatmap)*lib.entropy_score_avg(self.pos_heatmap)
-        self.vel_meas_certainty = prev_id_heatmap_ent*self.this_id_heatmap_ent
-        if self.VEL_MEAS_CERT_THRESH < self.vel_meas_certainty:
+        #self.vel_meas_certainty = prev_id_heatmap_ent*this_id_heatmap_ent
+        #if self.VEL_MEAS_CERT_THRESH < self.vel_meas_certainty:
+        if self.old_map_good and self.this_map_good:
             vel_measurement = self.get_velocity_estimate(self.old_heatmap, self.pos_heatmap)
             #self.KF.R = ... 
             self.KF.update(vel_measurement)
 
-        if ID_MAP_THRESH < self.this_id_heatmap_ent:
+        self.xs.append(self.KF.x)
+        self.Ps.append(self.KF.P)
+        self.poses.append(self.estimate_peak_xy(self.pos_heatmap))
+
+        if self.this_map_good:
             self.track_is_matched(curr_frame)
 
             # update embedding. Needs to happen after the above, as that updates current_pos.
-            self.update_embedding(self.get_embedding_at_current_pos(image_getter(), curr_frame))
+            # TODO: Future work. Currently we only keep initial one.
+            #self.update_embedding(self.get_embedding_at_current_pos(image_getter(), curr_frame))
         else:
             self.track_is_missed(curr_frame)
 
-
     # ==Track status management==
-    def track_is_missed(self,curr_frame):
+    def track_is_missed(self, curr_frame):
         self.missed_for += 1
         self.status = 'missed'
-        if self.missed_for >= self.delete_thresh or self.n_exits > 10:
+        if self.missed_for >= self.DELETE_THRESH: # or self.n_exits > 10:
             self.track_is_deleted(curr_frame)
         else:
-            self.age += 1
-            self.xs.append(self.KF.x)
-            self.Ps.append(self.KF.P)
-            xy = lib.argmax2d_xy(self.pos_heatmap)
-
+            pass
             # TODO: Such "exit zones" are a workaround, a larger-than-image map would be better.
-            x, y = xy
-            vx, vy = self.xs[-1]
-            if (x == 0 and vx < 0) or \
-               (x == self.pos_heatmap.shape[1]-1 and 0 < vx) or \
-               (y == 0 and vy < 0) or \
-               (y == self.pos_heatmap.shape[0]-1 and 0 < vy):
-                self.n_exits += 1
-            self.poses.append(xy)
+            #x, y = self.poses[-1]
+            #vx, vy = self.xs[-1]
+            #if (x == 0 and vx < 0) or \
+            #   (x == self.pos_heatmap.shape[1]-1 and 0 < vx) or \
+            #   (y == 0 and vy < 0) or \
+            #   (y == self.pos_heatmap.shape[0]-1 and 0 < vy):
+            #    self.n_exits += 1
 
-    def track_is_matched(self,curr_frame):
+    def track_is_matched(self, curr_frame):
+        if 0 < self.missed_for:
+            # Been missing until now, but...
+            self.missed_sightings += 1
+
+            # ...Only revive if seen enough times!
+            if self.missed_sightings < self.UNMISS_THRESH:
+                return
+
         self.last_matched_at = curr_frame
         self.status = 'matched'
         self.missed_for = 0
+        self.missed_sightings = 0
         self.n_exits = 0
-        self.age += 1
-        self.xs.append(self.KF.x)
-        self.Ps.append(self.KF.P)
-        self.poses.append(lib.argmax2d_xy(self.pos_heatmap))
 
     def track_is_deleted(self,curr_frame):
         self.deleted_at = curr_frame
@@ -250,7 +307,7 @@ class Track(object):
     def get_track_eval_line(self, cid, frame):
         #dukeMTMC format
         #[cam, ID, frame, left, top, width, height, worldX, worldY]
-        cX,cY = self.state_to_output(*self.poses[-1])
+        cX, cY = self.state_to_output(*self.poses[-1])
         h = int(((all_bs[cid-1][0]+all_bs[cid-1][1]*cX) + (all_bs[cid-1][2]+all_bs[cid-1][3]*cY))/2)
         w = int(0.4*h)
         l = int(cX-w/2)
@@ -271,11 +328,12 @@ class Track(object):
         #plot_covariance_ellipse((self.KF.x[0], self.KF.x[2]), self.KF.P, fc=self.color, alpha=0.4, std=[1,2,3])
         #print(self.poses)
         cX, cY = self.state_to_output(*self.poses[-1], output_shape=output_shape)
-        vX, vY = self.state_to_output(*self.xs[-1], output_shape=output_shape, ignore_padding=True)
+        vX, vY = self.state_to_output(*self.xs[-1], output_shape=output_shape, ignore_padding=True)*time_scale
         #print('vX: {}, vY: {}'.format(vX,vY))
         ax.plot(cX, cY, color=self.color, marker='o')
-        ax.arrow(cX, cY, vX*time_scale, vY*time_scale, head_width=20, head_length=7, fc=self.color, ec=self.color, linestyle='--')
-        plot_covariance_ellipse((cX+vX*10, cY+vY*10), self.Ps[-1], fc=self.color, alpha=0.5, std=[1, 2, 3])
+        ax.arrow(cX, cY, vX, vY, head_width=20, head_length=7, fc=self.color, ec=self.color, linestyle='--')
+        # TODO: The cov is not in output space!
+        #plot_covariance_ellipse((cX+vX, cY+vY), self.Ps[-1], fc=self.color, alpha=0.5, std=[1, 2, 3])
         #plt.text(*self.state_to_output(*self.poses[-1], output_shape=output_shape), s='{}'.format(self.embedding))
         if plot_past_trajectory and len(self.poses)>1:
             outputs_xy = self.states_to_outputs(np.array(self.poses), output_shape)
@@ -307,6 +365,6 @@ class Track(object):
 
     def plot_id_heatmap(self, ax, output_shape=None):
         hm = self._plot_heatmap(ax, self.id_heatmap, output_shape)
-        if hasattr(self, 'this_id_heatmap_ent'):
-            ax.text(*self.state_to_output(*self.poses[-1], output_shape=output_shape), s='{:.8f}'.format(self.this_id_heatmap_ent))
+        if hasattr(self, 'idmap_score'):
+            ax.text(*self.state_to_output(*self.poses[-1], output_shape=output_shape), s='{:.2f} | {:.3f}'.format(self.idmap_score, self.idmap_ent))
         return hm

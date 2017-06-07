@@ -45,6 +45,27 @@ def argmax2d_xy(arr, smooth=None):
     return np.array([idx[1], idx[0]])
 
 
+def expected_xy(p, thresh=None, magic_thresh=None):
+    if magic_thresh is not None:  # Some weak-ass heuristic
+        T = magic_thresh
+
+        # And reduce until we can afford it.
+        for _ in range(999):  # Avoids infinite loop.
+            thresh = T/np.prod(p.shape)
+            if np.sum(thresh <= p):
+                break
+            T = 1 + (T-1)/2
+        else:
+            print("Warning: expected_xy ran out of steps")
+
+    if thresh is not None:
+        p = np.array(p)
+        p[p < thresh] = 0
+        p /= np.clip(np.sum(p), 1e-5, 1)  # Avoid NaNs
+
+    return np.sum(np.mgrid[:p.shape[0],:p.shape[1]] * p, axis=(1,2))[::-1]
+
+
 def softmax(x, T=1):
     x = x - np.max(x)
     eh = np.exp(x/T)
