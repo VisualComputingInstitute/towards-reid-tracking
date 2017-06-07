@@ -66,6 +66,13 @@ def embed_crops_at(net, image, xys, debug_out_dir=None, debug_cam=None, debug_cu
     return net.embed_crops(crops)
 
 
+def load_or_reuse(image, args, icam, frame):
+    if image is not None:
+        return image
+    framedir = 'frames-0.5' if SCALE_FACTOR == 0.5 else 'frames'
+    return plt.imread(pjoin(args.basedir, framedir, 'camera{}/{}.jpg'.format(icam, lib.glob2loc(frame, icam))))
+
+
 #@profile
 def main(net, args):
     eval_path = pjoin(args.outdir, 'results/run_{:%Y-%m-%d_%H:%M:%S}.txt'.format(datetime.datetime.now()))
@@ -83,26 +90,26 @@ def main(net, args):
     track_id = 1
     det_lists = read_detections(CAMS)
     gt_list = load_trainval(pjoin(args.basedir, 'ground_truth/trainval.mat'),time_range=[127720, 187540]) #train_val_mini
-    DIST_THRESH = 5 if args.use_appearance else 200 #7 for ReID embeddings, 200 for euclidean pixel distance
+    APP_THRESH = 6 #7 for ReID embeddings, 200 for euclidean pixel distance
+    DIST_THRESH = 200  # 7 for ReID embeddings, 200 for euclidean pixel distance
     DET_INIT_THRESH = 0.3
     DET_CONTINUE_THRESH = -0.3
     m = Munkres()
+
+    per_cam_gts = [lib.slice_all(gt_list, gt_list['Cams'] == icam) for icam in CAMS]
 
     # ===Tracking fun begins: iterate over frames===
     # TODO: global time (duke)
     for curr_frame in range(args.t0, args.t1+1):
         print("\rFrame {}, {} matched/missed/init/total tracks, {} total seen".format(curr_frame, ', '.join(map(n_active_tracks, track_lists)), sum(map(len, track_lists))), end='', flush=True)
 
-        for icam, det_list, track_list, already_tracked in zip(CAMS, det_lists, track_lists, already_tracked_gids):
-            if args.use_appearance or shall_vis(args, curr_frame):
-                framedir = 'frames-0.5' if SCALE_FACTOR == 0.5 else 'frames'
-                image = plt.imread(pjoin(args.basedir, framedir, 'camera{}/{}.jpg'.format(icam, lib.glob2loc(curr_frame, icam))))
+        for icam, det_list, gt_list, track_list, already_tracked in zip(CAMS, det_lists, per_cam_gts, track_lists, already_tracked_gids):
+            image = None
 
             curr_dets = det_list[np.where(det_list[:,1] == lib.glob2loc(curr_frame, icam))[0]]
             curr_dets = curr_dets[curr_dets[:,-1] > DET_CONTINUE_THRESH]
 
-            gt_curr_frame = lib.slice_all(gt_list, gt_list['GFIDs'] == curr_frame)
-            curr_gts = lib.slice_all(gt_curr_frame, gt_curr_frame['Cams'] == icam)
+            curr_gts = lib.slice_all(gt_list, gt_list['GFIDs'] == curr_frame)
 
 
             # ===visualization===
@@ -113,6 +120,7 @@ def main(net, args):
                 axes = axes.flatten()
 
                 for ax in axes:
+                    image = load_or_reuse(image, args, icam, curr_frame)
                     ax.imshow(image, extent=[0, 1920, 1080, 0])
 
                 # plot (active) tracks
@@ -140,13 +148,27 @@ def main(net, args):
                 if args.use_appearance:
                     track_embs = np.array([track.embedding for track in track_list])
                     det_xys = [lib.box_center_xy(lib.ltrb_to_box(det[2:])) for det in curr_dets]
+                    image = load_or_reuse(image, args, icam, curr_frame)
                     det_embs = embed_crops_at(net, image, det_xys,
                                               debug_out_dir=debug_dir, debug_cam=icam, debug_curr_frame=curr_frame)
                     dist_matrix = net.embeddings_cdist(track_embs, det_embs)
                     #print()
                     #print("dists-pct: {} | {} | {}".format(*np.percentile(dist_matrix.flatten(), [0, 50, 100])))
                     #print("dists-top: " + " | ".join(map(str, np.sort(dist_matrix, axis=None)[:5])))
-                    #dist_matrix[dist_matrix > DIST_THRESH] = 999999
+
+                    # apply dist threshold here to keep munkres from finding strange compromises
+                    dist_matrix = dist_matrix / APP_THRESH
+                    dist_matrix[dist_matrix > 1.0] = 999999
+
+                    # * Euclidean dist!
+                    #dist_matrix_euc = np.zeros((len(track_list), num_curr_dets))
+                    #for itrack, track in enumerate(track_list):
+                    #    dist_matrix_euc[itrack] = [euclidean(track.KF.x[::2], lib.box_center_xy(lib.ltrb_to_box(det[2:]))) for det in curr_dets]
+                    #dist_matrix_euc = dist_matrix_euc/DIST_THRESH
+                    #dist_matrix_euc[dist_matrix_euc > 1.0] = 999999
+
+                    dist_matrix = dist_matrix#*dist_matrix_euc
+
                 else:
                     dist_matrix = np.zeros((len(track_list), num_curr_dets))
 
@@ -163,7 +185,10 @@ def main(net, args):
                         #  apply the threshold here (munkres apparently can't deal 100% with inf, so use 999999)
                         #              dist_matrix_line[np.where(dist_matrix_line>dist_thresh)] = 999999
                         #              dist_matrix.append(dist_matrix_line.tolist())
-                    dist_matrix[dist_matrix > DIST_THRESH] = 999999
+
+                    # apply dist threshold here to keep munkres from finding strange compromises
+                    dist_matrix = dist_matrix / DIST_THRESH
+                    dist_matrix[dist_matrix > 1.0] = 999999
 
                 # Do the Munkres! (Hungarian algo) to find best matching tracks<->dets
                 # at first, all detections (if any) are unassigend
@@ -173,7 +198,7 @@ def main(net, args):
                 # perform update step for each match (check for threshold, to see, if it's actually a miss)
                 for nn_match_idx in range(len(nn_indexes)):
                     # ---UPDATE---
-                    if (dist_matrix[nn_indexes[nn_match_idx][0]][nn_indexes[nn_match_idx][1]] <= DIST_THRESH):
+                    if (dist_matrix[nn_indexes[nn_match_idx][0]][nn_indexes[nn_match_idx][1]] <= 1.0):
                         nn_det = curr_dets[nn_indexes[nn_match_idx][1]]  # 1st: track_idx, 2nd: 0=track_idx, 1 det_idx
                         track_list[nn_indexes[nn_match_idx][0]].track_update(lib.box_center_xy(lib.ltrb_to_box(nn_det[2:])))
                         track_list[nn_indexes[nn_match_idx][0]].track_is_matched(curr_frame)
@@ -196,6 +221,7 @@ def main(net, args):
                 for unassigend_det_idx in unassigned_dets:
                     if curr_dets[unassigend_det_idx][-1] > DET_INIT_THRESH:
                         init_pose = lib.box_center_xy(lib.ltrb_to_box(curr_dets[unassigend_det_idx][2:]))
+                        image = load_or_reuse(image, args, icam, curr_frame)
                         new_track = Track(SEQ_DT, curr_frame, init_pose, track_id=track_id,
                                           embedding=embed_crops_at(net, image, [init_pose])[0] if args.use_appearance else None)
                         track_id = track_id + 1
@@ -207,6 +233,7 @@ def main(net, args):
                         continue
                     abs_box = lib.box_rel2abs(box)
                     init_pose = lib.box_center_xy(abs_box)
+                    image = load_or_reuse(image, args, icam, curr_frame)
                     new_track = Track(SEQ_DT, curr_frame, init_pose, track_id=tid,
                                       embedding=embed_crops_at(net, image, [init_pose])[0] if args.use_appearance else None,
                                       init_thresh=1,delete_thresh=90)
@@ -341,7 +368,7 @@ if __name__ == '__main__':
                         help='Whether or not to use the deep net as appearance model.')
     parser.add_argument('--model', default='lunet2c',
                         help='Name of the model to load. Corresponds to module names in lib/models. Or `fake`')
-    parser.add_argument('--weights', default='/work/breuers/dukeMTMC/models/lunet2c-final.pkl',
+    parser.add_argument('--weights', default='/work/breuers/dukeMTMC/models/lunet2c-noscale-nobg-2to32-aug.pkl',
                         help='Name of the weights to load for the model (path to .pkl file).')
     parser.add_argument('--t0', default=127720, type=int,
                         help='Time of first frame.')
@@ -363,7 +390,9 @@ if __name__ == '__main__':
     net = SemiFakeNews(model=args.model, weights=args.weights,
                        input_scale_factor=1.0 if SCALE_FACTOR==0.5 else 0.5,  # ASK LUCAS
                        debug_skip_full_image=True,  # Goes with the above.
-                       fake_dets=None) if args.use_appearance else None
+                       fake_dets=None,
+                       fake_shape=None,
+                       ) if args.use_appearance else None
 
     # Prepare output dirs
     for icam in args.cams:
