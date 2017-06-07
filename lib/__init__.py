@@ -177,11 +177,19 @@ def paste_into_middle_2d(x, out_shape=None, fill_value=0, out=None):
 
     h, w = x.shape
     H, W = out_shape
-    dy, dx = (H-h)/2, (W-w)/2
-    #print(dy, dx)
-    assert 0 <= dy and 0 <= dx,  "Something wrong with shape-fixing! {} = ({}-{})//2 and {} = ({}-{})//2".format(dy, H, h, dx, W, w)
+    dy_out, dx_out = max(0, (H-h)/2), max(0, (W-w)/2)
+    dy_in, dx_in = max(0, (h-H)/2), max(0, (w-W)/2)
+    #assert 0 <= dy and 0 <= dx,  "Something wrong with shape-fixing! {} = ({}-{})//2 and {} = ({}-{})//2".format(dy, H, h, dx, W, w)
 
-    out[int(dy+0.5):H-int(dy),int(dx+0.5):W-int(dx)] = x
+    # Stick to bottom on ambiguity
+    #out[int(dy_out+0.5):H-int(dy_out),int(dx_out+0.5):W-int(dx_out)] = x[int(dy_in+0.5):h-int(dy_in),int(dx_in+0.5):w-int(dx_in)]
+
+    # Stick to top on ambiguity
+    out[int(dy_out):H-int(dy_out+0.5),int(dx_out):W-int(dx_out+0.5)] = x[int(dy_in):h-int(dy_in+0.5),int(dx_in):w-int(dx_in+0.5)]
+
+    # Doesn't work correctly on perfect ambiguity.
+    #out[round(dy_out):H-round(dy_out),round(dx_out):W-round(dx_out)] = x[round(dy_in):h-round(dy_in),round(dx_in):w-round(dx_in)]
+
     return out
 
 
