@@ -32,7 +32,14 @@ This can be easily done using `pip install -e git+GITHUB_URL`, see the correspon
 
 The model we used for final experiments is `lunet2c` and [the weights we used can be downloaded here](https://omnomnom.vision.rwth-aachen.de/data/lunet2c-noscale-nobg-2to32-aug.pkl).
 
+## The dataset and evaluation
+
+This experimental work has been evaluated on the [dukeMTMC dataset](http://vision.cs.duke.edu/DukeMTMC/).
+Please refer to this project page for the used images, annotations, evaluation script, etc.
+
 ## The run parameters
+
+The below settings correspond to Table 1 of the paper. Details on the parameters can be found in Section 4.
 
 ```
 NN-KF
