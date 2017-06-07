@@ -36,7 +36,11 @@ def scale_shape(shape, factors):
     return int(shape[0]*factors[0]), int(shape[1]*factors[1])
 
 
-def argmax2d_xy(arr):
+def argmax2d_xy(arr, smooth=None):
+    if smooth is not None:
+        sy, sx = smooth
+        arr = cv2.GaussianBlur(arr, (sx,sy), 0, borderType=cv2.BORDER_CONSTANT)
+
     idx = np.unravel_index(arr.argmax(), arr.shape)
     return np.array([idx[1], idx[0]])
 
