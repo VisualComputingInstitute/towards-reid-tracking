@@ -1,6 +1,20 @@
 ## Towards a Principled Integration of Multi-Camera Re-Identification and Tracking through Optimal Bayes Filters
 
 This is the code for reproducing the experiments from our paper [Towards a Principled Integration of Multi-Camera Re-Identification and Tracking through Optimal Bayes Filters](https://arxiv.org/abs/1705.04608).
+If you end up using any of this in your publication or otherwise find it useful, please cite our work as:
+
+```
+@article{BeyerBreuers2017Arxiv,
+  author    = {Lucas Beyer and
+               Stefan Breuers and
+               Vitaly Kurin and
+               Bastian Leibe},
+  title     = {Towards a Principled Integration of Multi-Camera Re-Identification
+               and Tracking through Optimal Bayes Filters},
+  journal   = {arXiv preprint arXiv:1705.04608},
+  year      = {2017},
+}
+```
 
 Please note that this is very much research code, and the paper is a very exploratory one.
 It's made public for reference so that others can see what exactly we did, as the paper in no way can explain everything in enough detail.
