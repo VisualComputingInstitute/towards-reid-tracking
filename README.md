@@ -6,6 +6,8 @@ Please note that this is very much research code, and the paper is a very explor
 It's made public for reference so that others can see what exactly we did, as the paper in no way can explain everything in enough detail.
 **It is not production-quality code**, rather it is nice code that got ever more messy as the deadline approached.
 
+Due to the nature of the code, many things might still be confusing and non-obvious to others, so feel free to ask us, either by opening an issue here on github (preferably), or shooting us an e-mail!
+
 ## The neural networks
 
 The training code of the neural networks is not public yet as it's pending publication of the dependency at https://github.com/VisualComputingInstitute/triplet-reid.
