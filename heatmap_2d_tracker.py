@@ -249,7 +249,7 @@ if __name__ == '__main__':
                         help='Where to store generated output. Only needed if `--vis` is also passed.')
     parser.add_argument('--model', default='lunet2c',
                         help='Name of the model to load. Corresponds to module names in lib/models. Or `fake`')
-    parser.add_argument('--weights', default='/work/breuers/dukeMTMC/models/lunet2-final.pkl',
+    parser.add_argument('--weights', default='/work/breuers/dukeMTMC/models/lunet2c-noscale-nobg-2to32-aug.pkl',
                         help='Name of the weights to load for the model (path to .pkl file).')
     parser.add_argument('--t0', default=127720, type=int,
                         help='Time of first frame.')
