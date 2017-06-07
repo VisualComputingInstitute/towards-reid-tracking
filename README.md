@@ -18,5 +18,29 @@ The model we used for final experiments is `lunet2c` and [the weights we used ca
 
 ## The run parameters
 
-TODO
+```
+NN-KF
+DIST_THRESH = 200, det_init_thresh = 0.3, det_continue_thresh = 0.0 init_thresh = 3, delete_thresh = 5
+
++GT init
+--gt_init
+DIST_THRESH = 200, DET_INIT_THRESH = 0.3, DET_CONTINUE_THRESH = -0.3, init_thresh=1, delete_thresh=90
+
++ReID
+--gt_init --use_appearance
+DIST_THRESH = 200, APP_THRESH = 6, DET_INIT_THRESH = 0.3, DET_CONTINUE_THRESH = -0.3, init_thresh=1, delete_thresh=90
+
+only ReID
+--gt_init --use_appearance
+DIST_THRESH = 6, DET_INIT_THRESH = 0.3, DET_CONTINUE_THRESH = -0.3, init_thresh=1, delete_thresh=90
+
+Full
+--dist_thresh 6 --unmiss_thresh 2
+
++entropy
+--dist_thresh 5.5 --ent_thresh 0.25 --maxlife 8000 --unmiss_thresh 5
+killed of age: 4
+```
+
+Final raw bounding box results [can be found here](https://omnomnom.vision.rwth-aachen.de/data/bbmtrack-results/).
 
