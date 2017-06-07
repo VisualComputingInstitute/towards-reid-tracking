@@ -157,9 +157,10 @@ def get_pk_batch2(Ximgs, Xtr, ntid, img_per_tid, boxsize, subsamp, max_overlap_i
             this_tid_ious.append(lib.max_iou(box, boxes))  # Take the max as IoU isn't tied to person ID.
 
         # We got enough of this person, append to the overall.
-        cutouts.extend(this_tid_cutouts)
-        ious.extend(this_tid_ious)
-        tids.extend([tid]*len(this_tid_cutouts))
+        if len(this_tid_cutouts) == img_per_tid:
+            cutouts.extend(this_tid_cutouts)
+            ious.extend(this_tid_ious)
+            tids.extend([tid]*len(this_tid_cutouts))
 
     Ximg = np.array(cutouts, dtype=np.float32)/255.0
     return Ximg, np.array(tids, dtype=np.uint32), np.array(ious, dtype=np.float32)
