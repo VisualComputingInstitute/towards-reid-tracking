@@ -41,6 +41,28 @@ def hires_shared_twin(net):
     new_net = net[:]
 
     assert isinstance(new_net.modules[-5], df.PoolingCUDNN)
-    new_net.modules[-5] = df.PoolingCUDNN((8,3), mode='avg', stride=(1,1))
+    new_net.modules[-5] = df.PoolingCUDNN((8,3), mode='average_exc_pad', stride=(1,1), padding=(4,1))
+
+    return new_net
+
+
+class Restrict(df.Module):
+    def symb_forward(self, x):
+        return x[:,:,1:,1:]
+
+
+def ultrahires_shared_twin(net_hires):
+    new_net = net_hires[:]
+
+    assert isinstance(new_net.modules[-5], df.PoolingCUDNN)
+
+    new_net.modules[4] = df.Sequential(df.PoolingCUDNN((2,2), stride=(1,1), padding=(1,1)), Restrict(), df.SpatialOverfeatRoll())
+    new_net.modules[8] = df.Sequential(df.PoolingCUDNN((2,2), stride=(1,1), padding=(1,1)), Restrict(), df.SpatialOverfeatRoll())
+    new_net.modules[11] = df.Sequential(df.PoolingCUDNN((2,2), stride=(1,1), padding=(1,1)), Restrict(), df.SpatialOverfeatRoll())
+    new_net.modules[15] = df.Sequential(df.PoolingCUDNN((2,2), stride=(1,1), padding=(1,1)), Restrict(), df.SpatialOverfeatRoll())
+    new_net.add(df.SpatialOverfeatUnroll())
+    new_net.add(df.SpatialOverfeatUnroll())
+    new_net.add(df.SpatialOverfeatUnroll())
+    new_net.add(df.SpatialOverfeatUnroll())
 
     return new_net
