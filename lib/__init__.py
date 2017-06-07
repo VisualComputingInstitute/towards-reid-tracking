@@ -76,6 +76,9 @@ def entropy_score_avg(x):
         It is exactly 0 for (near) uniform distributions, and 1 for single peaks.
     """
     e0 = entropy_avg(np.full_like(x, 1/np.prod(x.shape)))
+    x = np.array(x)
+    x[x < 2/np.prod(x.shape)] = 0
+    x /= np.sum(x)
     return (e0 - entropy_avg(x))/e0
 
 
