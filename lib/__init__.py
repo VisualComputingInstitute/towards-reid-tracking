@@ -156,8 +156,10 @@ def gauss2d_xy(cov, nstd=2, mean=[0,0]):
     """
     guaranteed to return filter of odd shape which also keeps probabilities as probabilities.
     """
-    sx, sy = np.sqrt(cov[0,0]), np.sqrt(cov[1,1])
-    x, y = np.mgrid[-max(1,int(nstd*sy)):max(1,int(nstd*sy))+1:1, -max(1,int(nstd*sx)):max(1,int(nstd*sx))+1:1]
+    sx, sy = np.sqrt(cov[0][0]), np.sqrt(cov[1][1])
+    dx = max(1, round(nstd*sx + abs(mean[0])))
+    dy = max(1, round(nstd*sy + abs(mean[1])))
+    x, y = np.mgrid[-dy:dy+1:1, -dx:dx+1:1]  # This formulation ensures odd sizes.
     pos = np.dstack((y, x))
     rv = multivariate_normal(mean, cov)
     filt = rv.pdf(pos)
