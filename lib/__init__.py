@@ -245,7 +245,7 @@ try:
     def convolve_edge_zeropad(image, filt):
         dx1, dx2 = filt.shape[1]//2, filt.shape[1]//2
         dy1, dy2 = filt.shape[0]//2, filt.shape[0]//2
-        x = cv2.copyMakeBorder(x, dy1, dy2, dx1, dx2, cv2.BORDER_CONSTANT)
+        x = cv2.copyMakeBorder(image, dy1, dy2, dx1, dx2, cv2.BORDER_CONSTANT)
         x = cv2.filter2D(x, -1, filt)
         return x[dy1:-dy2,dx1:-dx2]
 
@@ -403,6 +403,9 @@ def stick_to_bounds(box, bounds=(0,0,1,1)):
     Sticks the given `box`, which is a `(l, t, w, h)`-tuple to the given bounds
     which are also expressed as `(l, t, w, h)`-tuple.
     """
+    if bounds is None:
+        return box
+
     l, t, w, h = box
     bl, bt, bw, bh = bounds
 
