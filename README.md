@@ -11,6 +11,9 @@ It's made public for reference so that others can see what exactly we did, as th
 The training code of the neural networks is not public yet as it's pending publication of the dependency at https://github.com/VisualComputingInstitute/triplet-reid.
 
 However, the code creating the models and loading the trained weights is included.
+It is based on a custom deep-learning library on top of Theano called [DeepFried2](https://github.com/lucasb-eyer/DeepFried2) and a small toolbox called [lbtoolbox](https://github.com/lucasb-eyer/lbtoolbox) that you'll need to install.
+This can be easily done using `pip install -e git+GITHUB_URL`, see the corresponding READMEs.
+
 The model we used for final experiments is `lunet2c` and [the weights we used can be downloaded here](https://omnomnom.vision.rwth-aachen.de/data/lunet2c-noscale-nobg-2to32-aug.pkl).
 
 
